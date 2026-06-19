@@ -25,7 +25,7 @@ function inferCategory(q: string): Exclude<Category, "auto"> {
   if (/(공부|학습|교육|외국어|영어|수학|학교|성적|집중력|암기)/.test(q)) {
     return "education";
   }
-  if (/(식단|영양|비타민|영양제|탄수|단백질|프로틴|파우더|보충제|지방|간헐적|단식|오메가|철분|칼슘)/.test(q)) {
+  if (/(식단|영양|비타민|영양제|탄수|단백질|프로틴|파우더|보충제|지방|간헐적|단식|오메가|철분|칼슘|제로|탄산|감미료|설탕|아스파탐|수크랄로스|스테비아)/.test(q)) {
     return "nutrition";
   }
   if (/(운동|근력|유산소|스트레칭|헬스|근육|부상|러닝|달리기)/.test(q)) {
@@ -103,6 +103,9 @@ const keywordMap: Array<[RegExp, string[]]> = [
   [/(부상)/, ["injury prevention"]],
   [/(간헐적|단식)/, ["intermittent fasting"]],
   [/(탄수|탄수화물)/, ["carbohydrate restriction"]],
+  [/(제로|무설탕|zero|diet soda|다이어트.?콜라|탄산|콜라|사이다)/, ["non-sugar sweeteners", "low calorie sweeteners", "artificial sweeteners", "sugar-sweetened beverages", "diet soda"]],
+  [/(감미료|아스파탐|수크랄로스|스테비아|에리스리톨|알룰로스|아세설팜|ace.?k|aspartame|sucralose|stevia|erythritol|allulose)/, ["aspartame", "sucralose", "acesulfame potassium", "stevia", "erythritol", "gut microbiome", "glucose tolerance"]],
+  [/(혈당|인슐린|당뇨|대사|장내|마이크로바이옴)/, ["glucose metabolism", "insulin response", "type 2 diabetes", "gut microbiota", "metabolic health"]],
   [/(고기|육류)/, ["meat intake", "iron intake"]],
   [/(편식|안 먹)/, ["picky eating", "food refusal"]],
   [/(영상|스마트폰|유튜브|스크린)/, ["screen time"]],

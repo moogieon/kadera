@@ -121,6 +121,9 @@ function buildPracticalChecks(question: string, category: string): PracticalChec
     return infantDevelopmentChecks;
   }
   if (/(단백질|프로틴|파우더|보충제|whey|protein)/.test(q)) return proteinSupplementChecks;
+  if (/(제로|무설탕|탄산|콜라|사이다|감미료|아스파탐|수크랄로스|스테비아|에리스리톨|zero|diet soda|sweetener)/.test(q)) {
+    return sweetenerDrinkChecks;
+  }
   switch (category) {
     case "childcare":
       return childcareChecks;
@@ -264,10 +267,10 @@ const childcareChecks: PracticalCheck[] = [
 
 const nutritionChecks: PracticalCheck[] = [
   {
-    label: "대상자 구분",
-    what_to_try_ko: "성인, 임신, 소아, 신장질환, 당뇨 등 본인 조건을 먼저 적습니다.",
-    what_to_watch_ko: "연구 대상과 내 조건이 맞는지 확인합니다.",
-    why_it_matters_ko: "영양 연구는 건강한 성인과 질환자가 완전히 다르게 해석됩니다.",
+    label: "대상자별 기준 확인",
+    what_to_try_ko: "답변의 성인 남성/여성, 임신·수유, 소아·청소년, 노인, 기저질환자 기준 중 내 상황과 가까운 줄을 봅니다.",
+    what_to_watch_ko: "건강한 성인 연구인지, 질환자나 소아에게도 적용 가능한 근거인지 구분합니다.",
+    why_it_matters_ko: "영양 연구는 건강한 성인, 임신부, 소아, 노인, 질환자에서 결론이 달라질 수 있습니다.",
     urgency: "routine_observation"
   },
   {
@@ -363,6 +366,51 @@ const proteinSupplementChecks: PracticalCheck[] = [
     what_to_watch_ko: "단백질을 늘린 뒤 실제 훈련 성과나 체성분 변화가 있는지 봅니다.",
     why_it_matters_ko: "개인 적용에서는 논문 평균보다 내 반응을 함께 봐야 합니다.",
     urgency: "routine_observation"
+  }
+];
+
+const sweetenerDrinkChecks: PracticalCheck[] = [
+  {
+    label: "설탕 탄산 대체인지 확인",
+    what_to_try_ko: "제로음료가 기존 설탕 탄산을 줄이는 대체인지, 물 대신 추가로 늘어난 음료인지 구분합니다.",
+    what_to_watch_ko: "설탕 음료를 줄인 경우와 전체 음료량이 늘어난 경우는 해석이 다릅니다.",
+    why_it_matters_ko: "제로음료의 이득은 주로 당류와 칼로리 대체에서 나옵니다.",
+    urgency: "routine_observation"
+  },
+  {
+    label: "원재료명에서 감미료 찾기",
+    what_to_try_ko: "라벨에서 아스파탐, 아세설팜칼륨, 수크랄로스, 스테비올배당체, 에리스리톨, 알룰로스를 확인합니다.",
+    what_to_watch_ko: "제품명보다 실제 감미료 조합을 봅니다.",
+    why_it_matters_ko: "연구와 안전성 논쟁은 '제로' 전체가 아니라 감미료 종류별로 달라집니다.",
+    urgency: "routine_observation"
+  },
+  {
+    label: "하루 캔 수 기록",
+    what_to_try_ko: "1주일 동안 하루 몇 캔인지 적습니다.",
+    what_to_watch_ko: "매일 여러 캔이면 감미료뿐 아니라 카페인, 산, 식습관 대체 문제도 같이 봅니다.",
+    why_it_matters_ko: "섭취 빈도와 양이 위험 해석의 핵심입니다.",
+    urgency: "routine_observation"
+  },
+  {
+    label: "혈당 이슈가 있으면 직접 비교",
+    what_to_try_ko: "당뇨나 혈당 관리 중이면 같은 식사 조건에서 혈당 반응을 기록합니다.",
+    what_to_watch_ko: "제로음료 자체보다 같이 먹는 음식과 단맛 갈망 변화도 봅니다.",
+    why_it_matters_ko: "감미료의 대사 반응은 개인차가 크다는 연구들이 있습니다.",
+    urgency: "discuss_with_professional"
+  },
+  {
+    label: "소화 불편감 확인",
+    what_to_try_ko: "복부팽만, 설사, 가스가 특정 제품 뒤 반복되는지 봅니다.",
+    what_to_watch_ko: "당알코올이나 일부 감미료는 사람에 따라 위장 불편감을 만들 수 있습니다.",
+    why_it_matters_ko: "안전성 논쟁과 별개로 개인 적용에서는 위장 반응이 중요합니다.",
+    urgency: "routine_observation"
+  },
+  {
+    label: "페닐케톤뇨증 예외",
+    what_to_try_ko: "본인이나 가족에게 페닐케톤뇨증이 있으면 아스파탐 표시를 피합니다.",
+    what_to_watch_ko: "라벨의 '페닐알라닌 함유' 표시를 확인합니다.",
+    why_it_matters_ko: "아스파탐은 페닐알라닌 공급원이므로 해당 질환에서는 예외적으로 중요합니다.",
+    urgency: "seek_prompt_evaluation"
   }
 ];
 

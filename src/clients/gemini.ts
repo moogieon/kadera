@@ -127,17 +127,24 @@ export class GeminiRagClient {
         "If the question describes a debate between people, answer as a debate judge: claim A verdict, claim B verdict, what would change the verdict, and what evidence would settle it.",
         "Never mirror the user's framing. If the user asks 'is it bad?', do not just agree. If the user asks 'is it good?', do not just agree. Compare the claim against the evidence.",
         "Do not stop at 'it depends'. If the user asks about an amount, calculate concrete examples using plausible assumptions and clearly label them as examples.",
+        "Do not ask the user to provide basic demographics before giving value. Provide default interpretation for adult male, adult female, pregnancy/lactation, children/adolescents, older adults, and major comorbidity groups when relevant.",
+        "If demographics change the answer, include a '대상자별로 보면' section instead of only saying '개인마다 다릅니다'.",
         "For protein, supplements, exercise, or nutrition dosage questions, compare the user's amount against g/kg/day evidence ranges when possible.",
         "For protein and muscle gain questions, separate: muscle/lean mass evidence, total daily protein target, per-meal dose if evidence supports it, kidney safety in healthy adults, kidney disease caution, and unsupported claims such as hair loss if the provided evidence does not support them.",
+        "For food additive, sweetener, supplement, cosmetic, medicine, device, or consumer product questions, include label names users should look for, common product categories, and a warning that exact brand formulas can change by country and date.",
+        "For sweetener and zero-sugar drink questions, separate sugar-sweetened beverage evidence, non-sugar sweetener evidence, individual sweetener concerns, ADI/safety-agency context when available in evidence, and practical label-check guidance.",
+        "When discussing studies, say what kind of study it was: randomized trial, cohort, systematic review/meta-analysis, mechanistic/lab, animal, or guideline review. Explain what was measured and what the study cannot prove.",
+        "Always include a '대표 연구를 뜯어보면' section in answer_ko. For 2 to 4 key evidence items, explain: study title/index, study type, what researchers actually did or compared, population if available, measured outcome, result direction, and why that supports or limits the answer.",
+        "Do not only say 'research generally says'. The user must be able to say '아 그 연구는 그런 식으로 했구나'.",
         "Use a direct answer first: too much / reasonable / probably unnecessary / risky for specific groups.",
-        "For common internet arguments, use this structure inside answer_ko: '판정', '누가 맞나', '숫자로 보면', '논문/연구가 실제로 말하는 것', '틀리기 쉬운 포인트', '내가 확인할 것'.",
+        "For common internet arguments, use this structure inside answer_ko: '판정', '누가 맞나', '숫자로 보면', '논문/연구가 실제로 말하는 것', '성분/제품 라벨에서 볼 것', '틀리기 쉬운 포인트', '내가 확인할 것'.",
         "Always include practical_checks: concrete things the user can observe, record, compare, or ask a professional about.",
         "For childcare/development questions, include around 10 parent-observable checks when evidence supports this style of guidance.",
         "For nutrition, exercise, education, psychology, and general health, include practical checks adapted to that domain."
       ],
       required_json_shape: {
         answer_ko:
-          "Korean answer. Include direct answer, numeric examples if dose-related, what older papers suggested, what newer papers suggest, confidence, and practical caveat. Avoid vague 'depends' without examples.",
+          "Korean answer. Include direct answer, numeric examples if dose-related, what older papers suggested, what newer papers suggest, a '대표 연구를 뜯어보면' study-by-study section, confidence, and practical caveat. Avoid vague 'depends' without examples.",
         verdict: "supported | mixed | not_supported | insufficient_evidence",
         limitations: ["Korean limitation strings"],
         practical_checks: [

@@ -24,6 +24,7 @@ describe("text pipeline", () => {
     expect(classifyCategory("공복 유산소가 살 더 빠져?", "auto")).toBe("exercise");
     expect(classifyCategory("간헐적 단식 효과 있어?", "auto")).toBe("nutrition");
     expect(classifyCategory("단백질 파우더 하루에 100g 이상 먹는 거 많아?", "auto")).toBe("nutrition");
+    expect(classifyCategory("제로 탄산이 설탕 탄산보다 몸에 더 안 좋아?", "auto")).toBe("nutrition");
   });
 
   it("builds English research query terms", () => {
@@ -39,6 +40,16 @@ describe("text pipeline", () => {
     );
     expect(buildQueryTerms("단백질 파우더가 탈모에 안 좋고 신장에도 안 좋아?", "nutrition")).toEqual(
       expect.arrayContaining(["protein intake renal function healthy adults", "protein supplement hair loss"])
+    );
+    expect(buildQueryTerms("제로 탄산이 설탕 탄산보다 더 나쁘고 감미료가 혈당에 안 좋아?", "nutrition")).toEqual(
+      expect.arrayContaining([
+        "non-sugar sweeteners",
+        "sugar-sweetened beverages",
+        "aspartame",
+        "sucralose",
+        "gut microbiome",
+        "glucose metabolism"
+      ])
     );
   });
 
@@ -127,6 +138,9 @@ describe("ClaimCheckerService", () => {
     expect(first.evidence_interpretation?.[0]?.stance).toBe("unclear");
     expect(first.citations[0]?.sourceId).toBe("123");
     expect(first.citations[0]?.title).toContain("Fasted aerobic exercise");
+    expect(first.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(first.answer_ko).toContain("무엇을 했나");
+    expect(first.answer_ko).toContain("적용 한계");
     expect(first.practical_checks?.length).toBeGreaterThan(0);
     expect(second.cached).toBe(true);
     expect(calls).toBe(8);
@@ -169,6 +183,56 @@ describe("ClaimCheckerService", () => {
     expect(result.answer_ko).toContain("55kg 성인 여성");
     expect(result.answer_ko).toContain("75kg 성인 남성");
     expect(result.answer_ko).toContain("약 120g/day");
+    expect(result.answer_ko).toContain("대상자별로 보면");
+    expect(result.answer_ko).toContain("임신/수유");
+    expect(result.answer_ko).toContain("노인");
+    expect(result.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(result.answer_ko).toContain("더 정확히 보려면");
+    expect(result.answer_ko).toContain("키/체중");
+    service.close();
+  });
+
+  it("adds label-level context for zero-sugar drink questions", async () => {
+    const service = newService(async (input) => {
+      const url = String(input);
+      if (url.includes("esearch.fcgi")) return jsonResponse({ esearchresult: { idlist: ["123"] } });
+      if (url.includes("efetch.fcgi")) {
+        return textResponse(`
+          <PubmedArticleSet>
+            <PubmedArticle>
+              <MedlineCitation>
+                <PMID>123</PMID>
+                <Article>
+                  <ArticleTitle>Non-sugar sweeteners and metabolic health: a systematic review</ArticleTitle>
+                  <Abstract><AbstractText>Non-sugar sweeteners were associated with mixed metabolic outcomes.</AbstractText></Abstract>
+                  <Journal><JournalIssue><PubDate><Year>2025</Year></PubDate></JournalIssue></Journal>
+                  <PublicationTypeList><PublicationType>Systematic Review</PublicationType></PublicationTypeList>
+                </Article>
+              </MedlineCitation>
+            </PubmedArticle>
+          </PubmedArticleSet>
+        `);
+      }
+      if (url.includes("semanticscholar.org")) return jsonResponse({ data: [] });
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const result = await service.checkClaim({
+      question: "제로 탄산이 설탕 탄산보다 더 안 좋고 감미료가 위험해?",
+      category: "auto",
+      skipCache: true
+    });
+
+    expect(result.answer_ko).toContain("감미료별로 보면");
+    expect(result.answer_ko).toContain("아스파탐");
+    expect(result.answer_ko).toContain("수크랄로스");
+    expect(result.answer_ko).toContain("원재료명");
+    expect(result.answer_ko).toContain("대상자별로 보면");
+    expect(result.answer_ko).toContain("소아/청소년");
+    expect(result.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(result.answer_ko).toContain("더 정확히 보려면");
+    expect(result.answer_ko).toContain("제품 라벨");
+    expect(result.practical_checks?.map((item) => item.label)).toContain("원재료명에서 감미료 찾기");
     service.close();
   });
 });

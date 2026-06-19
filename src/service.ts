@@ -105,7 +105,7 @@ export class ClaimCheckerService {
       limit: input.limit
     });
     const fallbackAnswer = composeAnswer(input.question, evidence, false);
-    const answer = this.postProcessAnswer(input.question, await this.synthesizeAnswer(input.question, evidence, fallbackAnswer));
+    const answer = this.postProcessAnswer(input.question, evidence.category, evidence, await this.synthesizeAnswer(input.question, evidence, fallbackAnswer));
     if (!input.skipCache) this.cache.save(normalizedQuestion, answer);
     return answer;
   }
@@ -185,7 +185,7 @@ export class ClaimCheckerService {
 
     const evidence = await this.findEvidence(input);
     const fallbackAnswer = composeAnswer(input.question, evidence, false);
-    const answer = this.postProcessAnswer(input.question, await this.synthesizeAnswer(input.question, evidence, fallbackAnswer));
+    const answer = this.postProcessAnswer(input.question, evidence.category, evidence, await this.synthesizeAnswer(input.question, evidence, fallbackAnswer));
     return { evidence, answer };
   }
 
@@ -459,14 +459,168 @@ export class ClaimCheckerService {
     }
   }
 
-  private postProcessAnswer(question: string, answer: ClaimAnswer): ClaimAnswer {
+  private postProcessAnswer(
+    question: string,
+    category: Exclude<Category, "auto">,
+    evidence: EvidenceSearchResult,
+    answer: ClaimAnswer
+  ): ClaimAnswer {
     const proteinDoseContext = buildProteinDoseContext(question);
-    if (!proteinDoseContext || answer.answer_ko.includes("50kg")) return answer;
+    const sweetenerContext = buildSweetenerDrinkContext(question);
+    const populationContext = buildPopulationContext(question, category);
+    const studyDigest = buildStudyDigest(evidence.papers);
+    const conditionGuide = buildConditionGuide(category);
+    let answerKo = answer.answer_ko;
+    if (proteinDoseContext && !answerKo.includes("50kg")) {
+      answerKo = `${proteinDoseContext}\n\n근거 기반 상세 해석:\n${answerKo}`;
+    }
+    if (sweetenerContext && !answerKo.includes("감미료별로 보면")) {
+      answerKo = `${sweetenerContext}\n\n근거 기반 상세 해석:\n${answerKo}`;
+    }
+    if (populationContext && !answerKo.includes("대상자별로 보면")) {
+      answerKo = `${answerKo}\n\n${populationContext}`;
+    }
+    if (studyDigest && (!answerKo.includes("대표 연구를 뜯어보면") || !answerKo.includes("무엇을 했나"))) {
+      answerKo = `${answerKo}\n\n${studyDigest}`;
+    }
+    if (conditionGuide && !answerKo.includes("더 정확히 보려면")) {
+      answerKo = `${answerKo}\n\n${conditionGuide}`;
+    }
+    if (answerKo === answer.answer_ko) return answer;
     return {
       ...answer,
-      answer_ko: `${proteinDoseContext}\n\n근거 기반 상세 해석:\n${answer.answer_ko}`
+      answer_ko: answerKo
     };
   }
+}
+
+function buildConditionGuide(category: Exclude<Category, "auto">): string {
+  if (category === "childcare") {
+    return "더 정확히 보려면: 아이의 정확한 월령, 조산/교정월령 여부, 성별, 최근 수면·식사·질병 변화, 걱정되는 행동이 언제/얼마나 자주 나오는지, 가능하면 짧은 관찰 기록을 함께 적으면 분석이 더 명확해집니다.";
+  }
+  if (category === "education") {
+    return "더 정확히 보려면: 나이/학년, 현재 수준, 목표 과목, 공부 시간, 수면, 적용하려는 방법, 비교하고 싶은 결과 지표를 적으면 분석이 더 명확해집니다.";
+  }
+  if (category === "psychology") {
+    return "더 정확히 보려면: 나이, 성별, 증상 기간, 수면, 약 복용, 생활 기능 저하 여부, 위험 신호 여부를 적으면 분석이 더 명확해집니다. 자해나 극단적 선택 생각이 있으면 검색보다 즉시 주변 도움과 전문기관 연결이 우선입니다.";
+  }
+  if (category === "exercise") {
+    return "더 정확히 보려면: 나이, 성별, 키/체중, 운동 경력, 주당 운동 횟수, 목표, 통증/부상 여부, 기저질환을 적으면 분석이 더 명확해집니다.";
+  }
+  if (category === "nutrition") {
+    return "더 정확히 보려면: 나이, 성별, 키/체중, 임신·수유 여부, 운동량, 하루 섭취량, 제품 라벨, 당뇨·신장질환·고혈압 같은 기저질환, 복용약을 적으면 분석이 더 명확해집니다.";
+  }
+  return "더 정확히 보려면: 나이, 성별, 키/체중, 임신 여부, 기저질환, 복용약, 증상 기간, 실제 섭취량이나 노출량을 적으면 분석이 더 명확해집니다.";
+}
+
+function buildPopulationContext(question: string, category: Exclude<Category, "auto">): string | undefined {
+  if (category === "childcare") {
+    return [
+      "대상자별로 보면: 소아/영유아 질문은 성인 연구를 거의 그대로 적용하면 안 됩니다.",
+      "월령 기준: 0-12개월, 12-24개월, 3-5세는 발달 기대치가 달라 같은 행동도 의미가 달라집니다.",
+      "조산/저체중 출생: 실제 나이보다 교정월령과 성장 이력을 같이 봐야 합니다.",
+      "남아/여아: 평균 발달 속도 차이는 있어도, 눈맞춤·호명반응·공동주의 같은 사회적 의사소통 신호가 지속적으로 약하면 성별로 넘기지 말고 평가 기준으로 봅니다.",
+      "기저질환/청력/시력: 청력 저하, 시력 문제, 발작, 수면 문제는 발달 문제처럼 보일 수 있어 따로 확인해야 합니다."
+    ].join(" ");
+  }
+
+  if (!["health", "nutrition", "exercise", "psychology"].includes(category)) return undefined;
+
+  const proteinSpecific = /(단백질|프로틴|파우더|보충제|whey|protein)/i.test(question)
+    ? " 단백질 질문에서는 같은 100g도 55kg 여성에게는 1.82g/kg/day, 75kg 남성에게는 1.33g/kg/day라 해석이 달라집니다."
+    : "";
+  const sweetenerSpecific = /(제로|무설탕|탄산|콜라|사이다|감미료|아스파탐|수크랄로스|스테비아|에리스리톨|zero|diet soda|sweetener)/i.test(question)
+    ? " 제로음료 질문에서는 성인보다 소아/임신부에서 카페인, 단맛 습관, 페닐알라닌 표시까지 같이 봐야 합니다."
+    : "";
+
+  return [
+    `대상자별로 보면: 건강한 성인 남성/여성은 대체로 같은 근거 틀을 쓰되 체중, 체지방, 활동량 때문에 같은 양의 의미가 달라집니다.${proteinSpecific}${sweetenerSpecific}`,
+    "성인 남성: 평균 체중과 근육량이 큰 편이라 같은 섭취량도 g/kg 기준으로 낮게 잡히는 경우가 많습니다. 운동량이 많으면 권장 범위가 올라갈 수 있습니다.",
+    "성인 여성: 체중이 낮으면 같은 g 또는 같은 캔 수라도 체중 대비 노출량이 높습니다. 임신 가능성, 철분/칼슘, 카페인, 수유 여부를 같이 봐야 합니다.",
+    "임신/수유: 체중조절, 보충제, 감미료, 카페인, 약물성 성분은 일반 성인 연구를 그대로 적용하지 말고 산부인과/의료진 기준을 우선합니다.",
+    "소아/청소년: 성인 체중감량·대사 연구를 그대로 적용하지 않습니다. 성장, 수면, 식습관 형성, 카페인 노출을 먼저 봅니다.",
+    "노인: 근감소, 신장 기능 저하, 복용약, 탈수 위험 때문에 같은 식단/보충제라도 부작용 쪽을 더 보수적으로 봅니다.",
+    "기저질환자: 당뇨, 만성콩팥병, 간질환, 고혈압, 심혈관질환, 섭식장애 병력이 있으면 건강한 성인 연구의 결론을 그대로 적용하면 안 됩니다."
+  ].join(" ");
+}
+
+function buildStudyDigest(papers: Paper[]): string | undefined {
+  const usable = papers.filter((paper) => paper.title && (paper.abstract || paper.publicationTypes.length > 0)).slice(0, 3);
+  if (usable.length === 0) return undefined;
+
+  return [
+    "대표 연구를 뜯어보면:",
+    ...usable.map((paper, index) => {
+      const citationIndex = index + 1;
+      const year = paper.year ? `, ${paper.year}` : "";
+      const design = studyDesignLabel(paper);
+      const what = inferWhatWasDone(paper);
+      const result = inferResultSentence(paper);
+      const limit = inferStudyLimit(paper);
+      return `[${citationIndex}] "${paper.title}"(${paper.source}${year}) - 연구 형태: ${design}. 무엇을 했나: ${what} 결과: ${result} 적용 한계: ${limit}`;
+    })
+  ].join("\n");
+}
+
+function studyDesignLabel(paper: Paper): string {
+  const text = `${paper.evidenceLevel} ${paper.publicationTypes.join(" ")} ${paper.title}`.toLowerCase();
+  if (/systematic|meta/.test(text)) return "체계적 문헌고찰/메타분석";
+  if (/randomized|clinical trial|controlled trial|intervention/.test(text)) return "무작위/임상 개입 연구";
+  if (/cohort|case-control|cross-sectional|observational/.test(text)) return "관찰연구";
+  if (/guideline|recommendation|who|cdc|healthfinder/.test(text)) return "공식 가이드라인/권고";
+  if (/preprint|arxiv|medrxiv|biorxiv/.test(text)) return "프리프린트";
+  return "논문/문헌";
+}
+
+function inferWhatWasDone(paper: Paper): string {
+  const abstract = cleanAbstract(paper.abstract);
+  if (!abstract) return "초록이 없어 제목과 서지정보 기준으로만 판단했습니다.";
+  const first = splitSentences(abstract)[0];
+  return first ? trimSentence(first, 220) : "초록의 연구 목적/방법 문장을 기준으로 판단했습니다.";
+}
+
+function inferResultSentence(paper: Paper): string {
+  const abstract = cleanAbstract(paper.abstract);
+  if (!abstract) return "초록 결과가 없어 효과 크기나 방향은 원문 확인이 필요합니다.";
+  const sentences = splitSentences(abstract);
+  const result = sentences.find((sentence) =>
+    /(result|found|showed|associated|increased|decreased|reduced|improved|effect|significant|no significant|risk|outcome|conclusion|결과|증가|감소|개선|연관|유의)/i.test(sentence)
+  );
+  return trimSentence(result ?? sentences[Math.min(1, sentences.length - 1)] ?? abstract, 260);
+}
+
+function inferStudyLimit(paper: Paper): string {
+  switch (paper.evidenceLevel) {
+    case "systematic_review":
+      return "여러 연구를 모은 근거라 방향성 판단에는 강하지만, 포함된 연구들의 대상자/기간/측정법 차이를 같이 봐야 합니다.";
+    case "clinical_study":
+      return "개입 효과를 보기 좋지만 표본, 기간, 비교군 조건이 내 상황과 맞는지 확인해야 합니다.";
+    case "observational_study":
+      return "장기 현실 데이터를 볼 수 있지만 원인-결과를 단정하기 어렵습니다.";
+    case "preprint":
+      return "정식 동료심사 전 자료라 신뢰도를 한 단계 낮춰 봐야 합니다.";
+    case "official_guidance":
+      return "개별 논문 하나보다 보수적 권고에 가깝지만 개인 진단을 대신하지는 않습니다.";
+    default:
+      return "제목/초록 중심 근거라 원문에서 대상자와 결과 수치를 확인해야 합니다.";
+  }
+}
+
+function cleanAbstract(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function splitSentences(value: string): string[] {
+  return value
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function trimSentence(value: string, maxLength: number): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength - 1).trim()}...`;
 }
 
 function buildProteinDoseContext(question: string): string | undefined {
@@ -489,6 +643,21 @@ function buildProteinDoseContext(question: string): string | undefined {
     "신장 해석: 건강한 성인 운동자에게 단기간 고단백 섭취가 곧바로 신장을 망가뜨린다고 단정하기는 어렵습니다. 하지만 만성콩팥병, 단백뇨, eGFR 저하, 당뇨, 고혈압이 있으면 건강한 운동자 연구를 그대로 적용하면 안 됩니다.",
     "틀리기 쉬운 포인트: 파우더 100g은 실제 단백질 100g이 아닐 수 있습니다. 제품 라벨의 단백질 g, 닭가슴살/계란/우유 등 식사 단백질, 하루 총량을 합쳐서 계산해야 합니다.",
     "내가 확인할 것: 체중, 주당 저항운동 횟수, 하루 총 단백질 g, 제품 1스쿱의 실제 단백질 g, eGFR/크레아티닌/단백뇨 여부를 보면 이 논쟁은 훨씬 명확해집니다."
+  ].join(" ");
+}
+
+function buildSweetenerDrinkContext(question: string): string | undefined {
+  if (!/(제로|무설탕|탄산|콜라|사이다|감미료|아스파탐|수크랄로스|스테비아|에리스리톨|zero|diet soda|sweetener|aspartame|sucralose)/i.test(question)) {
+    return undefined;
+  }
+
+  return [
+    "판정: 제로 탄산이 일반 설탕 탄산보다 '무조건 더 나쁘다'는 주장은 근거가 약합니다. 당류와 칼로리를 줄이는 목적이면 설탕 탄산보다 유리할 수 있습니다. 다만 '제로니까 물처럼 마음껏 마셔도 완벽하게 안전하다'도 과장입니다.",
+    "누가 맞나: 설탕 탄산을 매일 많이 마시는 사람에게 제로로 바꾸는 것은 당류/칼로리 감소 측면에서 이득이 있습니다. 하지만 체중조절이나 대사질환 예방을 제로음료에 기대하는 것은 약합니다. WHO는 2023년 비당류 감미료를 장기 체중조절 수단으로 쓰지 말라고 권고했습니다.",
+    "연구가 실제로 한 일: 체계적 문헌고찰/가이드라인은 무작위시험과 관찰연구를 모아 체중, 당뇨, 심혈관질환, 사망률 같은 결과를 봅니다. 무작위시험은 단기 체중/칼로리 변화에는 도움이 될 수 있지만 기간이 짧은 경우가 많고, 관찰연구는 장기 위험 신호를 보지만 '제로를 마셔서 병이 생겼다'를 바로 증명하지는 못합니다. 장내미생물/혈당 연구는 일부 감미료가 사람마다 다른 포도당 반응을 만들 수 있음을 보지만, 표본이 작거나 기전 연구인 경우가 많습니다.",
+    "감미료별로 보면: 아스파탐은 코카콜라 제로, 다이어트 콜라, 펩시맥스/펩시 제로 같은 콜라류에 흔히 쓰이며, IARC는 2023년 '인체 발암 가능성 2B'로 분류했지만 JECFA는 일일섭취허용량 40mg/kg/day를 유지했습니다. 아세설팜칼륨/Ace-K는 아스파탐과 섞여 코카콜라 제로, 펩시맥스류에 흔합니다. 수크랄로스는 일부 제로 음료, 에너지드링크, 단백질음료에 들어가며 장내미생물/대사 영향 논쟁이 있습니다. 에리스리톨은 탄산콜라보다 제로 디저트/단백질바/무설탕 간식에 더 흔하고, 심혈관 위험 신호 연구가 있어 과량 섭취는 조심해서 봅니다. 스테비아는 일부 제로/저당 음료에 쓰이고 보통 다른 감미료와 블렌딩됩니다.",
+    "성분/제품 라벨에서 볼 것: 제품명보다 원재료명을 봐야 합니다. '아스파탐', '아세설팜칼륨', '수크랄로스', '스테비올배당체/스테비아', '에리스리톨', '알룰로스'를 확인하세요. 브랜드 배합은 국가와 리뉴얼 시점에 따라 바뀌므로 코카콜라 제로/펩시 제로/칠성사이다 제로/스프라이트 제로 같은 이름만 보고 판단하면 틀릴 수 있습니다.",
+    "내가 확인할 것: 하루 몇 캔인지, 설탕 탄산을 대체한 것인지 아니면 물 대신 추가로 마시는 것인지, 카페인까지 같이 늘었는지, 복부팽만/설사/단맛 갈망이 생기는지, 당뇨나 혈당 측정 이슈가 있는지를 봐야 합니다."
   ].join(" ");
 }
 
