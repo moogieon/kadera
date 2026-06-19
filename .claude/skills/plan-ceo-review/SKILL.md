@@ -1,0 +1,1 @@
+/Users/cmlee/Desktop/personal/kadera/.claude/skills/gstack/plan-ceo-review/SKILL.md
