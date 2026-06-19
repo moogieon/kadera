@@ -1,0 +1,9 @@
+node_modules
+dist
+data
+.git
+.context
+.claude
+coverage
+*.log
+.env
