@@ -123,10 +123,6 @@ function renderAnswer(result) {
     })
     .join("");
 
-  const interpretations = (result.evidence_interpretation || [])
-    .map((item) => `<li>[${item.citationIndex}] ${escapeHtml(item.stance)} · ${escapeHtml(item.reason_ko)}</li>`)
-    .join("");
-
   const practicalChecks = (result.practical_checks || [])
     .map(
       (item, index) => `
@@ -142,19 +138,20 @@ function renderAnswer(result) {
 
   answer.innerHTML = `
     <div class="answer-body">${formatAnswerBody(result.answer_ko)}</div>
-    <div class="answer-meta">
-      <span>카테고리 ${escapeHtml(result.category)}</span>
-      <span>검색어 ${escapeHtml(result.query_terms.join(", "))}</span>
-    </div>
-    <h3>근거 해석</h3>
-    <ul>${interpretations || "<li>해석 없음</li>"}</ul>
     <h3>확인해볼 것</h3>
     <ul class="checks">${practicalChecks || "<li>체크 포인트 없음</li>"}</ul>
     <h3>출처</h3>
     <ul class="citations">${citations || "<li>출처 없음</li>"}</ul>
-    <h3>한계</h3>
-    <ul>${result.limitations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    ${renderLimitationsNote(result.limitations)}
   `;
+}
+
+function renderLimitationsNote(items) {
+  const useful = (items || [])
+    .filter((item) => !/자동 MVP|원문 전문 검토|효과 방향 판정/.test(item))
+    .slice(0, 2);
+  if (!useful.length) return "";
+  return `<p class="answer-note">참고: ${escapeHtml(useful.join(" "))}</p>`;
 }
 
 function formatAnswerBody(value) {
@@ -177,8 +174,7 @@ function splitAnswerSections(value) {
     "근거 기반 상세 해석",
     "대상자별로 보면",
     "대표 연구를 짧게 보면",
-    "대표 연구를 뜯어보면",
-    "더 정확히 보려면"
+    "대표 연구를 뜯어보면"
   ];
   const pattern = new RegExp(`(^|\\s)(${labels.map(escapeRegExp).join("|")}):`, "g");
   const normalized = String(value ?? "")
@@ -289,8 +285,7 @@ function isKnownAnswerHeading(value) {
     "근거 기반 상세 해석",
     "대상자별로 보면",
     "대표 연구를 짧게 보면",
-    "대표 연구를 뜯어보면",
-    "더 정확히 보려면"
+    "대표 연구를 뜯어보면"
   ].includes(value.trim());
 }
 

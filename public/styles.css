@@ -298,6 +298,13 @@ button:disabled {
   padding-left: 12px;
 }
 
+.answer-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .answer.empty,
 .papers.empty {
   color: var(--muted);

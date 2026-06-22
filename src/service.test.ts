@@ -197,8 +197,7 @@ describe("ClaimCheckerService", () => {
     expect(result.answer_ko).toContain("임신/수유");
     expect(result.answer_ko).toContain("노인");
     expect(result.answer_ko).toContain("대표 연구를 짧게 보면");
-    expect(result.answer_ko).toContain("더 정확히 보려면");
-    expect(result.answer_ko).toContain("키/체중");
+    expect(result.answer_ko).not.toContain("더 정확히 보려면");
     service.close();
   });
 
@@ -240,8 +239,7 @@ describe("ClaimCheckerService", () => {
     expect(result.answer_ko).toContain("대상자별로 보면");
     expect(result.answer_ko).toContain("소아/청소년");
     expect(result.answer_ko).toContain("대표 연구를 짧게 보면");
-    expect(result.answer_ko).toContain("더 정확히 보려면");
-    expect(result.answer_ko).toContain("제품 라벨");
+    expect(result.answer_ko).not.toContain("더 정확히 보려면");
     expect(result.practical_checks?.map((item) => item.label)).toContain("원재료명에서 감미료 찾기");
     service.close();
   });

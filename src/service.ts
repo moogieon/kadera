@@ -469,7 +469,6 @@ export class ClaimCheckerService {
     const sweetenerContext = buildSweetenerDrinkContext(question);
     const populationContext = buildPopulationContext(question, category);
     const studyDigest = buildStudyDigest(evidence.papers);
-    const conditionGuide = buildConditionGuide(category);
     let answerKo = answer.answer_ko;
     if (proteinDoseContext && !answerKo.includes("50kg")) {
       answerKo = `${proteinDoseContext}\n\n근거 기반 상세 해석:\n${answerKo}`;
@@ -483,34 +482,12 @@ export class ClaimCheckerService {
     if (studyDigest && (!/대표 연구를 (뜯어|짧게) 보면/.test(answerKo) || !answerKo.includes("무엇을 했나"))) {
       answerKo = `${answerKo}\n\n${studyDigest}`;
     }
-    if (conditionGuide && !answerKo.includes("더 정확히 보려면")) {
-      answerKo = `${answerKo}\n\n${conditionGuide}`;
-    }
     if (answerKo === answer.answer_ko) return answer;
     return {
       ...answer,
       answer_ko: answerKo
     };
   }
-}
-
-function buildConditionGuide(category: Exclude<Category, "auto">): string {
-  if (category === "childcare") {
-    return "더 정확히 보려면: 아이의 정확한 월령, 조산/교정월령 여부, 성별, 최근 수면·식사·질병 변화, 걱정되는 행동이 언제/얼마나 자주 나오는지, 가능하면 짧은 관찰 기록을 함께 적으면 분석이 더 명확해집니다.";
-  }
-  if (category === "education") {
-    return "더 정확히 보려면: 나이/학년, 현재 수준, 목표 과목, 공부 시간, 수면, 적용하려는 방법, 비교하고 싶은 결과 지표를 적으면 분석이 더 명확해집니다.";
-  }
-  if (category === "psychology") {
-    return "더 정확히 보려면: 나이, 성별, 증상 기간, 수면, 약 복용, 생활 기능 저하 여부, 위험 신호 여부를 적으면 분석이 더 명확해집니다. 자해나 극단적 선택 생각이 있으면 검색보다 즉시 주변 도움과 전문기관 연결이 우선입니다.";
-  }
-  if (category === "exercise") {
-    return "더 정확히 보려면: 나이, 성별, 키/체중, 운동 경력, 주당 운동 횟수, 목표, 통증/부상 여부, 기저질환을 적으면 분석이 더 명확해집니다.";
-  }
-  if (category === "nutrition") {
-    return "더 정확히 보려면: 나이, 성별, 키/체중, 임신·수유 여부, 운동량, 하루 섭취량, 제품 라벨, 당뇨·신장질환·고혈압 같은 기저질환, 복용약을 적으면 분석이 더 명확해집니다.";
-  }
-  return "더 정확히 보려면: 나이, 성별, 키/체중, 임신 여부, 기저질환, 복용약, 증상 기간, 실제 섭취량이나 노출량을 적으면 분석이 더 명확해집니다.";
 }
 
 function buildPopulationContext(question: string, category: Exclude<Category, "auto">): string | undefined {
