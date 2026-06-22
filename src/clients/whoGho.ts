@@ -39,6 +39,8 @@ export class WhoGhoClient {
         sourceId: indicator.IndicatorCode,
         title: `WHO GHO indicator: ${indicator.IndicatorName}`,
         authors: ["World Health Organization"],
+        venue: "WHO Global Health Observatory",
+        publisher: "World Health Organization",
         url: `https://ghoapi.azureedge.net/api/${indicator.IndicatorCode}`,
         abstract: rows
           .slice(0, 5)

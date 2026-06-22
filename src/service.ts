@@ -552,14 +552,59 @@ function buildStudyDigest(papers: Paper[]): string | undefined {
     "대표 연구를 뜯어보면:",
     ...usable.map((paper, index) => {
       const citationIndex = index + 1;
-      const year = paper.year ? `, ${paper.year}` : "";
       const design = studyDesignLabel(paper);
+      const attribution = studyAttribution(paper);
       const what = inferWhatWasDone(paper);
       const result = inferResultSentence(paper);
       const limit = inferStudyLimit(paper);
-      return `[${citationIndex}] "${paper.title}"(${paper.source}${year}) - 연구 형태: ${design}. 무엇을 했나: ${what} 결과: ${result} 적용 한계: ${limit}`;
+      return `[${citationIndex}] ${attribution} "${paper.title}" - 연구 형태: ${design}. 무엇을 했나: ${what} 결과: ${result} 적용 한계: ${limit}`;
     })
   ].join("\n");
+}
+
+function studyAttribution(paper: Paper): string {
+  const year = paper.year ? `${paper.year}년 ` : "";
+  const team = researchTeamLabel(paper);
+  const venue = paper.venue ? `${paper.venue}에 실린 ` : "";
+  const institution = paper.institutions?.[0] ? ` 기관/소속: ${paper.institutions.slice(0, 2).join(", ")}.` : "";
+  const publisher = !paper.venue && paper.publisher ? ` 발행/제공: ${paper.publisher}.` : "";
+  const database = ` 출처 DB: ${sourceLabel(paper.source)}.`;
+  return `${year}${venue}${team} 연구.${institution}${publisher}${database}`;
+}
+
+function researchTeamLabel(paper: Paper): string {
+  if (paper.institutions?.[0]) return `${paper.institutions[0]} 연구팀`;
+  if (paper.authors.length > 0) {
+    const firstAuthor = paper.authors[0];
+    const suffix = paper.authors.length > 1 ? " 등" : "";
+    return `${firstAuthor}${suffix}`;
+  }
+  if (paper.publisher) return `${paper.publisher}`;
+  if (paper.venue) return `${paper.venue}`;
+  return sourceLabel(paper.source);
+}
+
+function sourceLabel(source: Paper["source"]): string {
+  const labels: Record<Paper["source"], string> = {
+    pubmed: "PubMed",
+    semantic_scholar: "Semantic Scholar",
+    openalex: "OpenAlex",
+    europe_pmc: "Europe PMC",
+    core: "CORE",
+    cochrane_crossref: "Cochrane/Crossref",
+    who_gho: "WHO GHO",
+    cdc: "CDC",
+    myhealthfinder: "MyHealthfinder",
+    arxiv: "arXiv",
+    biorxiv: "bioRxiv",
+    medrxiv: "medRxiv",
+    crossref: "Crossref",
+    eric: "ERIC",
+    psyarxiv: "PsyArXiv",
+    kci: "KCI",
+    riss: "RISS"
+  };
+  return labels[source];
 }
 
 function studyDesignLabel(paper: Paper): string {

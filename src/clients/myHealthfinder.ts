@@ -38,6 +38,8 @@ function toPaper(topic: MyHealthfinderTopic): Paper | undefined {
     sourceId: String(topic.Id),
     title: topic.Title,
     authors: ["Office of Disease Prevention and Health Promotion"],
+    venue: "MyHealthfinder",
+    publisher: "Office of Disease Prevention and Health Promotion",
     year: topic.LastUpdate ? Number(topic.LastUpdate.slice(0, 4)) : undefined,
     url: topic.AccessibleVersion ?? `https://odphp.health.gov/myhealthfinder/api/v4/topicsearch.json?TopicId=${topic.Id}`,
     abstract: topic.Categories,

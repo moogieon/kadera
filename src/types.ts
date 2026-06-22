@@ -51,6 +51,9 @@ export interface Citation {
   sourceId: string;
   title: string;
   authors: string[];
+  venue?: string;
+  publisher?: string;
+  institutions?: string[];
   year?: number;
   doi?: string;
   url: string;

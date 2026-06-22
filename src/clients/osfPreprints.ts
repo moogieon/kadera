@@ -52,6 +52,8 @@ function toPaper(item: OsfPreprint): Paper | undefined {
     sourceId: item.id,
     title,
     authors: [],
+    venue: "PsyArXiv",
+    publisher: "Open Science Framework",
     year: publishedAt ? Number(publishedAt.slice(0, 4)) : undefined,
     doi: item.attributes?.doi ?? undefined,
     url: item.links?.html ?? `https://osf.io/preprints/psyarxiv/${item.id}`,

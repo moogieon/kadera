@@ -16,6 +16,9 @@ interface CoreWork {
   downloadUrl?: string;
   fullTextLink?: string;
   documentType?: string;
+  publisher?: string;
+  journals?: Array<{ title?: string }> | string[];
+  repositories?: Array<{ name?: string }> | string[];
 }
 
 export class CoreClient {
@@ -51,6 +54,8 @@ function toPaper(work: CoreWork): Paper | undefined {
     authors: Array.isArray(work.authors)
       ? work.authors.map((author) => (typeof author === "string" ? author : author.name ?? "")).filter(Boolean)
       : [],
+    venue: firstNamed(work.journals),
+    publisher: work.publisher ?? firstNamed(work.repositories),
     year: work.yearPublished,
     doi: work.doi,
     url: work.fullTextLink ?? work.downloadUrl ?? (work.doi ? `https://doi.org/${work.doi}` : `https://core.ac.uk/works/${work.id}`),
@@ -60,4 +65,11 @@ function toPaper(work: CoreWork): Paper | undefined {
     raw: work
   };
   return paper;
+}
+
+function firstNamed(values: Array<{ title?: string; name?: string }> | string[] | undefined): string | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const first = values[0];
+  if (!first) return undefined;
+  return typeof first === "string" ? first : first.title ?? first.name;
 }

@@ -53,6 +53,7 @@ function toPaper(item: RissItem): Paper | undefined {
     sourceId: text(item.link) ?? title,
     title,
     authors: text(item.author)?.split(";").map((author) => author.trim()).filter(Boolean) ?? [],
+    publisher: text(item.publisher),
     year: Number.isFinite(year) ? year : undefined,
     url: text(item.link) ?? "https://www.riss.kr/",
     abstract: text(item.description),

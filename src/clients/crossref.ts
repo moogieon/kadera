@@ -18,6 +18,7 @@ interface CrossrefWork {
   URL?: string;
   "is-referenced-by-count"?: number;
   "container-title"?: string[];
+  publisher?: string;
 }
 
 export class CrossrefClient {
@@ -51,6 +52,8 @@ function toPaper(item: CrossrefWork, cochraneOnly: boolean): Paper | undefined {
     title,
     authors:
       item.author?.map((author) => [author.given, author.family].filter(Boolean).join(" ")).filter(Boolean) ?? [],
+    venue: item["container-title"]?.[0],
+    publisher: item.publisher,
     year: item.issued?.["date-parts"]?.[0]?.[0],
     doi: item.DOI,
     url: item.URL ?? (item.DOI ? `https://doi.org/${item.DOI}` : ""),

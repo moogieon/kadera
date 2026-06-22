@@ -18,6 +18,8 @@ interface EuropePmcWork {
   pubTypeList?: { pubType?: string[] | string };
   citedByCount?: number;
   source?: string;
+  journalTitle?: string;
+  publisher?: string;
 }
 
 export class EuropePmcClient {
@@ -45,6 +47,8 @@ function toPaper(item: EuropePmcWork): Paper | undefined {
     sourceId: item.pmid ?? item.id,
     title: item.title,
     authors: item.authorString?.split(",").map((author) => author.trim()).filter(Boolean) ?? [],
+    venue: item.journalTitle,
+    publisher: item.publisher,
     year: item.pubYear ? Number(item.pubYear) : undefined,
     doi: item.doi,
     url: item.pmid ? `https://europepmc.org/article/MED/${item.pmid}` : `https://europepmc.org/article/${item.source ?? "PMC"}/${item.id}`,

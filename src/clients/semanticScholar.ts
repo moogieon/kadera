@@ -101,6 +101,7 @@ function toPaper(item: SemanticScholarPaper): Paper | undefined {
     title: item.title,
     abstract: item.abstract,
     authors: item.authors?.map((author) => author.name ?? "").filter(Boolean) ?? [],
+    venue: item.venue,
     year: item.year,
     doi: item.externalIds?.DOI,
     url: item.url ?? `https://www.semanticscholar.org/paper/${item.paperId}`,

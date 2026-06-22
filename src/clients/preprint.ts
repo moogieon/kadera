@@ -33,6 +33,7 @@ function toPaper(item: PreprintItem, source: SourceName): Paper | undefined {
     sourceId: item.doi,
     title: item.title,
     authors: item.authors?.split(";").map((author) => author.trim()).filter(Boolean) ?? [],
+    venue: item.server ?? source,
     year: item.date ? Number(item.date.slice(0, 4)) : undefined,
     doi: item.doi,
     url: `https://doi.org/${item.doi}`,

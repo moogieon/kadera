@@ -44,6 +44,8 @@ function toPaper(result: SocrataCatalogResult): Paper | undefined {
     sourceId: resource.id,
     title: `CDC dataset: ${resource.name}`,
     authors: ["Centers for Disease Control and Prevention"],
+    venue: result.metadata?.domain ?? "data.cdc.gov",
+    publisher: "Centers for Disease Control and Prevention",
     year: Number.isFinite(year) ? year : undefined,
     url: result.permalink ?? `https://data.cdc.gov/d/${resource.id}`,
     abstract: resource.description,

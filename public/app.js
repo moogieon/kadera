@@ -116,7 +116,10 @@ function renderAnswer(result) {
     .map((citation, index) => {
       const year = citation.year ? `, ${citation.year}` : "";
       const doi = citation.doi ? `, DOI ${escapeHtml(citation.doi)}` : "";
-      return `<li><a href="${escapeAttribute(citation.url)}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(citation.title)}</a><span>${escapeHtml(citation.source)}${year}${doi}</span></li>`;
+      const venue = citation.venue ? `, ${escapeHtml(citation.venue)}` : "";
+      const publisher = citation.publisher ? `, ${escapeHtml(citation.publisher)}` : "";
+      const institutions = citation.institutions?.length ? `, 기관 ${escapeHtml(citation.institutions.slice(0, 2).join(", "))}` : "";
+      return `<li><a href="${escapeAttribute(citation.url)}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(citation.title)}</a><span>${escapeHtml(citation.source)}${year}${venue}${publisher}${institutions}${doi}</span></li>`;
     })
     .join("");
 
@@ -171,10 +174,11 @@ function renderPapers(items) {
         <article class="paper">
           <div class="paper-top">
             <span class="paper-index">${index + 1}</span>
-            <span class="source">${escapeHtml(paper.source)}</span>
-            <span class="level">${escapeHtml(paper.evidenceLevel)}</span>
-            <span class="year">${paper.year || ""}</span>
-          </div>
+          <span class="source">${escapeHtml(paper.source)}</span>
+          <span class="level">${escapeHtml(paper.evidenceLevel)}</span>
+          ${paper.venue ? `<span class="level">${escapeHtml(paper.venue)}</span>` : ""}
+          <span class="year">${paper.year || ""}</span>
+        </div>
           <h3><a href="${escapeAttribute(paper.url)}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h3>
           <p class="authors">${escapeHtml(authors)}</p>
           <p>${abstract}</p>

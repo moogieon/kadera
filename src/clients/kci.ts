@@ -115,6 +115,8 @@ function toPaper(record: KciRecord, apiCode: "articleSearch" | "referenceSearch"
         .filter((author): author is string => Boolean(author)) ??
       text(record.author)?.split(";").map((author) => author.trim()).filter(Boolean) ??
       [],
+    venue: text(journalInfo?.["journal-name"]) ?? text(record.journalTitle),
+    publisher: text(journalInfo?.["publisher-name"]),
     year: Number.isFinite(year) ? year : undefined,
     doi,
     url: text(articleInfo?.url) ?? text(record.url) ?? (doi ? `https://doi.org/${doi}` : "https://www.kci.go.kr/"),

@@ -114,7 +114,14 @@ describe("ClaimCheckerService", () => {
                 <Article>
                   <ArticleTitle>Fasted aerobic exercise and body weight: a systematic review</ArticleTitle>
                   <Abstract><AbstractText>Review abstract.</AbstractText></Abstract>
-                  <Journal><JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue></Journal>
+                  <Journal><Title>Journal of Exercise Evidence</Title><JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue></Journal>
+                  <AuthorList>
+                    <Author>
+                      <LastName>Kim</LastName>
+                      <ForeName>Min</ForeName>
+                      <AffiliationInfo><Affiliation>Department of Sports Medicine, Yonsei University, Seoul, Korea.</Affiliation></AffiliationInfo>
+                    </Author>
+                  </AuthorList>
                   <PublicationTypeList><PublicationType>Systematic Review</PublicationType></PublicationTypeList>
                 </Article>
               </MedlineCitation>
@@ -139,6 +146,9 @@ describe("ClaimCheckerService", () => {
     expect(first.citations[0]?.sourceId).toBe("123");
     expect(first.citations[0]?.title).toContain("Fasted aerobic exercise");
     expect(first.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(first.answer_ko).toContain("Journal of Exercise Evidence");
+    expect(first.answer_ko).toContain("Yonsei University");
+    expect(first.answer_ko).toContain("기관/소속");
     expect(first.answer_ko).toContain("무엇을 했나");
     expect(first.answer_ko).toContain("적용 한계");
     expect(first.practical_checks?.length).toBeGreaterThan(0);

@@ -82,8 +82,10 @@ export function formatAnswerForText(answer: ClaimAnswer): string {
         .map((citation, index) => {
           const authors = citation.authors.slice(0, 3).join(", ");
           const year = citation.year ? `, ${citation.year}` : "";
+          const venue = citation.venue ? `, ${citation.venue}` : "";
+          const institution = citation.institutions?.length ? `, 기관: ${citation.institutions.slice(0, 2).join(", ")}` : "";
           const doi = citation.doi ? `, DOI: ${citation.doi}` : "";
-          return `[${index + 1}] ${citation.title}${authors ? ` (${authors}${year})` : year}${doi} - ${citation.url}`;
+          return `[${index + 1}] ${citation.title}${authors ? ` (${authors}${year}${venue}${institution})` : `${year}${venue}${institution}`}${doi} - ${citation.url}`;
         })
         .join("\n")
     : "출처 없음";
@@ -544,6 +546,9 @@ function toCitation(paper: Paper): Citation {
     sourceId: paper.sourceId,
     title: paper.title,
     authors: paper.authors,
+    venue: paper.venue,
+    publisher: paper.publisher,
+    institutions: paper.institutions,
     year: paper.year,
     doi: paper.doi,
     url: paper.url,

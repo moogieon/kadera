@@ -41,6 +41,7 @@ export class ArxivClient {
       sourceId: entry.id,
       title: entry.title.replace(/\s+/g, " ").trim(),
       authors: toArray(entry.author).map((author) => author.name ?? "").filter(Boolean),
+      venue: "arXiv",
       year: entry.published ? Number(entry.published.slice(0, 4)) : undefined,
       url: entry.id,
       abstract: entry.summary?.replace(/\s+/g, " ").trim(),

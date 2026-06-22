@@ -14,6 +14,8 @@ interface EricDoc {
   publicationdateyear?: string;
   peerreviewed?: string;
   url?: string;
+  source?: string;
+  publisher?: string;
 }
 
 export class EricClient {
@@ -39,6 +41,8 @@ function toPaper(doc: EricDoc): Paper | undefined {
     sourceId: doc.id,
     title: doc.title,
     authors: doc.author ?? [],
+    venue: doc.source,
+    publisher: doc.publisher,
     year: doc.publicationdateyear ? Number(doc.publicationdateyear) : undefined,
     url: doc.url ?? `https://eric.ed.gov/?id=${doc.id}`,
     abstract: doc.description,

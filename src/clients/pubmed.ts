@@ -79,6 +79,13 @@ function parseArticle(article: PubmedArticle): Paper | undefined {
       return [fore, last].filter(Boolean).join(" ");
     })
     .filter(Boolean);
+  const institutions = uniqueStrings(
+    toArray(articleNode?.AuthorList?.Author)
+      .flatMap((author) => toArray(author.AffiliationInfo))
+      .map((affiliation) => readText(affiliation?.Affiliation))
+      .filter((item): item is string => Boolean(item))
+      .map(cleanAffiliation)
+  ).slice(0, 3);
 
   const doi = toArray(article.PubmedData?.ArticleIdList?.ArticleId)
     .find((id) => id?.["@_IdType"] === "doi")?.["#text"];
@@ -88,6 +95,8 @@ function parseArticle(article: PubmedArticle): Paper | undefined {
     sourceId: pmid,
     title,
     authors,
+    venue: normalizeText(readText(articleNode?.Journal?.Title) ?? readText(articleNode?.Journal?.ISOAbbreviation)),
+    institutions,
     year: readYear(articleNode),
     doi,
     url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
@@ -98,6 +107,28 @@ function parseArticle(article: PubmedArticle): Paper | undefined {
   };
   paper.evidenceLevel = inferEvidenceLevel(publicationTypes, paper.source);
   return paper;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function cleanAffiliation(value: string | undefined): string {
+  return normalizeText(value)
+    .replace(/\bElectronic address:.*$/i, "")
+    .replace(/\bEmail:.*$/i, "")
+    .replace(/\s*,?\s*United States\.?$/i, "")
+    .replace(/\s*,?\s*USA\.?$/i, "")
+    .trim();
 }
 
 function readYear(articleNode: ArticleNode | undefined): number | undefined {
@@ -163,13 +194,25 @@ interface ArticleNode {
       LastName?: unknown;
       ForeName?: unknown;
       Initials?: unknown;
+      AffiliationInfo?: Array<{
+        Affiliation?: unknown;
+      }> | {
+        Affiliation?: unknown;
+      };
     }> | {
       LastName?: unknown;
       ForeName?: unknown;
       Initials?: unknown;
+      AffiliationInfo?: Array<{
+        Affiliation?: unknown;
+      }> | {
+        Affiliation?: unknown;
+      };
     };
   };
   Journal?: {
+    Title?: unknown;
+    ISOAbbreviation?: unknown;
     JournalIssue?: {
       PubDate?: {
         Year?: unknown;
