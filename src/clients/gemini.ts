@@ -135,8 +135,10 @@ export class GeminiRagClient {
         "For sweetener and zero-sugar drink questions, separate sugar-sweetened beverage evidence, non-sugar sweetener evidence, individual sweetener concerns, ADI/safety-agency context when available in evidence, and practical label-check guidance.",
         "When discussing studies, say what kind of study it was: randomized trial, cohort, systematic review/meta-analysis, mechanistic/lab, animal, or guideline review. Explain what was measured and what the study cannot prove.",
         "When available, identify where the study came from: publication year, journal/venue, institution/affiliation, publisher, and first author/research team. Do not invent institutions.",
-        "Always include a '대표 연구를 뜯어보면' section in answer_ko. For 2 to 4 key evidence items, explain: study title/index, study type, what researchers actually did or compared, population if available, measured outcome, result direction, and why that supports or limits the answer.",
+        "Always include a concise '대표 연구를 짧게 보면' section in answer_ko. For 2 to 3 key evidence items, explain study title/index, source institution or journal if available, what researchers compared, result direction, and one limitation.",
         "Do not only say 'research generally says'. The user must be able to say '아 그 연구는 그런 식으로 했구나'.",
+        "Keep the visible answer concise. Do not paste long abstract-like details; point users to citation indices and source links for full details.",
+        "The study-by-study section should be at most 3 bullets, and each bullet should be 1-2 short Korean sentences.",
         "Use a direct answer first: too much / reasonable / probably unnecessary / risky for specific groups.",
         "For common internet arguments, use this structure inside answer_ko: '판정', '누가 맞나', '숫자로 보면', '논문/연구가 실제로 말하는 것', '성분/제품 라벨에서 볼 것', '틀리기 쉬운 포인트', '내가 확인할 것'.",
         "Always include practical_checks: concrete things the user can observe, record, compare, or ask a professional about.",
@@ -145,7 +147,7 @@ export class GeminiRagClient {
       ],
       required_json_shape: {
         answer_ko:
-          "Korean answer. Include direct answer, numeric examples if dose-related, what older papers suggested, what newer papers suggest, a '대표 연구를 뜯어보면' study-by-study section, confidence, and practical caveat. Avoid vague 'depends' without examples.",
+          "Korean answer. Include direct answer, numeric examples if dose-related, what older papers suggested, what newer papers suggest, a concise '대표 연구를 짧게 보면' study-by-study section, confidence, and practical caveat. Avoid vague 'depends' without examples.",
         verdict: "supported | mixed | not_supported | insufficient_evidence",
         limitations: ["Korean limitation strings"],
         practical_checks: [

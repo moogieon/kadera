@@ -480,7 +480,7 @@ export class ClaimCheckerService {
     if (populationContext && !answerKo.includes("대상자별로 보면")) {
       answerKo = `${answerKo}\n\n${populationContext}`;
     }
-    if (studyDigest && (!answerKo.includes("대표 연구를 뜯어보면") || !answerKo.includes("무엇을 했나"))) {
+    if (studyDigest && (!/대표 연구를 (뜯어|짧게) 보면/.test(answerKo) || !answerKo.includes("무엇을 했나"))) {
       answerKo = `${answerKo}\n\n${studyDigest}`;
     }
     if (conditionGuide && !answerKo.includes("더 정확히 보려면")) {
@@ -527,20 +527,15 @@ function buildPopulationContext(question: string, category: Exclude<Category, "a
   if (!["health", "nutrition", "exercise", "psychology"].includes(category)) return undefined;
 
   const proteinSpecific = /(단백질|프로틴|파우더|보충제|whey|protein)/i.test(question)
-    ? " 단백질 질문에서는 같은 100g도 55kg 여성에게는 1.82g/kg/day, 75kg 남성에게는 1.33g/kg/day라 해석이 달라집니다."
+    ? " 예: 단백질 100g은 55kg 여성 1.82g/kg/day, 75kg 남성 1.33g/kg/day입니다."
     : "";
   const sweetenerSpecific = /(제로|무설탕|탄산|콜라|사이다|감미료|아스파탐|수크랄로스|스테비아|에리스리톨|zero|diet soda|sweetener)/i.test(question)
-    ? " 제로음료 질문에서는 성인보다 소아/임신부에서 카페인, 단맛 습관, 페닐알라닌 표시까지 같이 봐야 합니다."
+    ? " 제로음료는 소아/임신부에서 카페인, 단맛 습관, 페닐알라닌 표시까지 같이 봅니다."
     : "";
 
   return [
-    `대상자별로 보면: 건강한 성인 남성/여성은 대체로 같은 근거 틀을 쓰되 체중, 체지방, 활동량 때문에 같은 양의 의미가 달라집니다.${proteinSpecific}${sweetenerSpecific}`,
-    "성인 남성: 평균 체중과 근육량이 큰 편이라 같은 섭취량도 g/kg 기준으로 낮게 잡히는 경우가 많습니다. 운동량이 많으면 권장 범위가 올라갈 수 있습니다.",
-    "성인 여성: 체중이 낮으면 같은 g 또는 같은 캔 수라도 체중 대비 노출량이 높습니다. 임신 가능성, 철분/칼슘, 카페인, 수유 여부를 같이 봐야 합니다.",
-    "임신/수유: 체중조절, 보충제, 감미료, 카페인, 약물성 성분은 일반 성인 연구를 그대로 적용하지 말고 산부인과/의료진 기준을 우선합니다.",
-    "소아/청소년: 성인 체중감량·대사 연구를 그대로 적용하지 않습니다. 성장, 수면, 식습관 형성, 카페인 노출을 먼저 봅니다.",
-    "노인: 근감소, 신장 기능 저하, 복용약, 탈수 위험 때문에 같은 식단/보충제라도 부작용 쪽을 더 보수적으로 봅니다.",
-    "기저질환자: 당뇨, 만성콩팥병, 간질환, 고혈압, 심혈관질환, 섭식장애 병력이 있으면 건강한 성인 연구의 결론을 그대로 적용하면 안 됩니다."
+    `대상자별로 보면: 성인 남성/여성은 체중·활동량 때문에 같은 양의 의미가 달라집니다.${proteinSpecific}${sweetenerSpecific}`,
+    "임신/수유, 소아/청소년, 노인, 당뇨·신장질환·고혈압 등 기저질환자는 건강한 성인 연구를 그대로 적용하지 말고 더 보수적으로 봅니다."
   ].join(" ");
 }
 
@@ -549,7 +544,7 @@ function buildStudyDigest(papers: Paper[]): string | undefined {
   if (usable.length === 0) return undefined;
 
   return [
-    "대표 연구를 뜯어보면:",
+    "대표 연구를 짧게 보면:",
     ...usable.map((paper, index) => {
       const citationIndex = index + 1;
       const design = studyDesignLabel(paper);
@@ -557,8 +552,9 @@ function buildStudyDigest(papers: Paper[]): string | undefined {
       const what = inferWhatWasDone(paper);
       const result = inferResultSentence(paper);
       const limit = inferStudyLimit(paper);
-      return `[${citationIndex}] ${attribution} "${paper.title}" - 연구 형태: ${design}. 무엇을 했나: ${what} 결과: ${result} 적용 한계: ${limit}`;
-    })
+      return `[${citationIndex}] ${attribution} ${shortTitle(paper.title)} - ${design}. 무엇을 했나: ${what} 결과: ${result} 적용 한계: ${limit}`;
+    }),
+    "상세 초록과 원문은 아래 출처 링크에서 확인하면 됩니다."
   ].join("\n");
 }
 
@@ -568,7 +564,7 @@ function studyAttribution(paper: Paper): string {
   const venue = paper.venue ? `${paper.venue}에 실린 ` : "";
   const institution = paper.institutions?.[0] ? ` 기관/소속: ${paper.institutions.slice(0, 2).join(", ")}.` : "";
   const publisher = !paper.venue && paper.publisher ? ` 발행/제공: ${paper.publisher}.` : "";
-  const database = ` 출처 DB: ${sourceLabel(paper.source)}.`;
+  const database = paper.venue || paper.publisher || paper.institutions?.[0] ? "" : ` 출처 DB: ${sourceLabel(paper.source)}.`;
   return `${year}${venue}${team} 연구.${institution}${publisher}${database}`;
 }
 
@@ -618,37 +614,66 @@ function studyDesignLabel(paper: Paper): string {
 }
 
 function inferWhatWasDone(paper: Paper): string {
-  const abstract = cleanAbstract(paper.abstract);
-  if (!abstract) return "초록이 없어 제목과 서지정보 기준으로만 판단했습니다.";
-  const first = splitSentences(abstract)[0];
-  return first ? trimSentence(first, 220) : "초록의 연구 목적/방법 문장을 기준으로 판단했습니다.";
+  const topic = topicLabel(paper);
+  switch (paper.evidenceLevel) {
+    case "systematic_review":
+      return `${topic} 관련 선행연구를 모아 결과 방향을 비교했습니다.`;
+    case "clinical_study":
+      return `${topic}에 대한 개입군과 비교군의 변화를 비교했습니다.`;
+    case "observational_study":
+      return `${topic} 노출과 건강 결과의 연관성을 실제 집단 자료에서 비교했습니다.`;
+    case "official_guidance":
+      return `${topic}에 대한 공식 데이터나 권고 기준을 정리했습니다.`;
+    case "preprint":
+      return `${topic}에 대한 최신 예비 연구 결과를 제시했습니다.`;
+    default:
+      return `${topic}에 대해 제목·초록 기준으로 관련 결과를 확인했습니다.`;
+  }
 }
 
 function inferResultSentence(paper: Paper): string {
-  const abstract = cleanAbstract(paper.abstract);
-  if (!abstract) return "초록 결과가 없어 효과 크기나 방향은 원문 확인이 필요합니다.";
-  const sentences = splitSentences(abstract);
-  const result = sentences.find((sentence) =>
-    /(result|found|showed|associated|increased|decreased|reduced|improved|effect|significant|no significant|risk|outcome|conclusion|결과|증가|감소|개선|연관|유의)/i.test(sentence)
-  );
-  return trimSentence(result ?? sentences[Math.min(1, sentences.length - 1)] ?? abstract, 260);
+  const text = cleanAbstract(`${paper.title} ${paper.abstract ?? ""}`);
+  if (!text) return "결과 방향은 원문 확인이 필요합니다.";
+  if (/no (consistent|significant)|not associated|no association|lack of|insufficient/i.test(text)) {
+    return "뚜렷하거나 일관된 연관성은 제한적이라고 보고했습니다.";
+  }
+  if (/mixed|conflicting|inconsistent|unclear|heterogen/i.test(text)) {
+    return "결과가 일관되지 않아 조건별 해석이 필요하다고 보고했습니다.";
+  }
+  if (/microbiome|microbiota|glucose|insulin|glycemic|metabolic/i.test(text)) {
+    return "장내미생물, 혈당, 인슐린 같은 대사 지표와의 관련 가능성을 제시했습니다.";
+  }
+  if (/cancer|carcinogen|carcinogenic|tumou?r/i.test(text)) {
+    return "암 위험과의 관련성을 평가했지만, 결론은 연구 설계와 노출량에 따라 달라집니다.";
+  }
+  if (/improved|increased|reduced|decreased|lower|higher|benefit|effective/i.test(text)) {
+    return "관련 지표의 개선, 증가, 감소 같은 방향성 결과를 보고했습니다.";
+  }
+  if (/risk|associated|association|linked/i.test(text)) {
+    return "관련 위험 또는 연관성 신호를 보고했습니다.";
+  }
+  return "초록만으로는 효과 방향을 세밀하게 단정하기 어려워 원문 수치 확인이 필요합니다.";
 }
 
 function inferStudyLimit(paper: Paper): string {
   switch (paper.evidenceLevel) {
     case "systematic_review":
-      return "여러 연구를 모은 근거라 방향성 판단에는 강하지만, 포함된 연구들의 대상자/기간/측정법 차이를 같이 봐야 합니다.";
+      return "여러 연구를 모았지만 대상자·기간 차이는 남습니다.";
     case "clinical_study":
-      return "개입 효과를 보기 좋지만 표본, 기간, 비교군 조건이 내 상황과 맞는지 확인해야 합니다.";
+      return "표본, 기간, 비교군이 내 상황과 맞는지 봐야 합니다.";
     case "observational_study":
-      return "장기 현실 데이터를 볼 수 있지만 원인-결과를 단정하기 어렵습니다.";
+      return "현실 데이터지만 원인-결과 단정은 어렵습니다.";
     case "preprint":
-      return "정식 동료심사 전 자료라 신뢰도를 한 단계 낮춰 봐야 합니다.";
+      return "동료심사 전이라 신뢰도를 낮춰 봅니다.";
     case "official_guidance":
-      return "개별 논문 하나보다 보수적 권고에 가깝지만 개인 진단을 대신하지는 않습니다.";
+      return "보수적 권고지만 개인 진단은 아닙니다.";
     default:
-      return "제목/초록 중심 근거라 원문에서 대상자와 결과 수치를 확인해야 합니다.";
+      return "원문에서 대상자와 수치를 확인해야 합니다.";
   }
+}
+
+function shortTitle(title: string): string {
+  return `"${trimSentence(title, 90)}"`;
 }
 
 function cleanAbstract(value: string | undefined): string {
@@ -666,6 +691,29 @@ function trimSentence(value: string, maxLength: number): string {
   const clean = value.replace(/\s+/g, " ").trim();
   if (clean.length <= maxLength) return clean;
   return `${clean.slice(0, maxLength - 1).trim()}...`;
+}
+
+function topicLabel(paper: Paper): string {
+  const text = `${paper.title} ${paper.abstract ?? ""}`.toLowerCase();
+  if (/(sweetener|aspartame|sucralose|acesulfame|stevia|erythritol|diet soda|sugar)/.test(text)) {
+    return "감미료/제로음료와 대사 건강";
+  }
+  if (/(microbiome|microbiota|glucose|insulin|glycemic|metabolic|diet)/.test(text)) {
+    return "식단·장내미생물과 대사 건강";
+  }
+  if (/(protein|whey|resistance training|lean mass|kidney|renal)/.test(text)) {
+    return "단백질 섭취와 운동·신장 지표";
+  }
+  if (/(infant|toddler|autism|eye contact|joint attention|development)/.test(text)) {
+    return "영유아 발달과 사회적 의사소통";
+  }
+  if (/(exercise|cardio|weight loss|physical activity)/.test(text)) {
+    return "운동 방식과 체중·건강 지표";
+  }
+  if (/(sleep|anxiety|depression|mental health)/.test(text)) {
+    return "심리·수면과 건강 지표";
+  }
+  return "해당 주제";
 }
 
 function buildProteinDoseContext(question: string): string | undefined {

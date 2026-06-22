@@ -145,7 +145,7 @@ describe("ClaimCheckerService", () => {
     expect(first.evidence_interpretation?.[0]?.stance).toBe("unclear");
     expect(first.citations[0]?.sourceId).toBe("123");
     expect(first.citations[0]?.title).toContain("Fasted aerobic exercise");
-    expect(first.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(first.answer_ko).toContain("대표 연구를 짧게 보면");
     expect(first.answer_ko).toContain("Journal of Exercise Evidence");
     expect(first.answer_ko).toContain("Yonsei University");
     expect(first.answer_ko).toContain("기관/소속");
@@ -196,7 +196,7 @@ describe("ClaimCheckerService", () => {
     expect(result.answer_ko).toContain("대상자별로 보면");
     expect(result.answer_ko).toContain("임신/수유");
     expect(result.answer_ko).toContain("노인");
-    expect(result.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(result.answer_ko).toContain("대표 연구를 짧게 보면");
     expect(result.answer_ko).toContain("더 정확히 보려면");
     expect(result.answer_ko).toContain("키/체중");
     service.close();
@@ -239,7 +239,7 @@ describe("ClaimCheckerService", () => {
     expect(result.answer_ko).toContain("원재료명");
     expect(result.answer_ko).toContain("대상자별로 보면");
     expect(result.answer_ko).toContain("소아/청소년");
-    expect(result.answer_ko).toContain("대표 연구를 뜯어보면");
+    expect(result.answer_ko).toContain("대표 연구를 짧게 보면");
     expect(result.answer_ko).toContain("더 정확히 보려면");
     expect(result.answer_ko).toContain("제품 라벨");
     expect(result.practical_checks?.map((item) => item.label)).toContain("원재료명에서 감미료 찾기");
