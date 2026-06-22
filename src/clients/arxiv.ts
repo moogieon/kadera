@@ -23,7 +23,8 @@ export class ArxivClient {
 
   async search(query: string, limit: number): Promise<Paper[]> {
     const url = new URL("https://export.arxiv.org/api/query");
-    url.searchParams.set("search_query", query.split(/\s+/).map((term) => `all:${term}`).join(" AND "));
+    const tokens = queryTokens(query);
+    url.searchParams.set("search_query", tokens.map((term) => `all:${term}`).join(" AND "));
     url.searchParams.set("start", "0");
     url.searchParams.set("max_results", String(limit));
 
@@ -51,6 +52,28 @@ export class ArxivClient {
     };
   }
 }
+
+function queryTokens(query: string): string[] {
+  const tokens = [...new Set(query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [])].filter((token) => !arxivStopwords.has(token));
+  return tokens.length > 0 ? tokens.slice(0, 8) : ["health"];
+}
+
+const arxivStopwords = new Set([
+  "review",
+  "clinical",
+  "trial",
+  "cohort",
+  "study",
+  "studies",
+  "health",
+  "nutrition",
+  "diet",
+  "child",
+  "infant",
+  "toddler",
+  "physical",
+  "activity"
+]);
 
 function toArray<T>(value: T | T[] | undefined): T[] {
   if (!value) return [];

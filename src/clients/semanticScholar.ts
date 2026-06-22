@@ -37,13 +37,15 @@ export class SemanticScholarClient {
   private async searchRecentByYear(query: string, limit: number, category?: Exclude<Category, "auto">): Promise<Paper[]> {
     const currentYear = new Date().getFullYear();
     const minYear = currentYear - 8;
+    const collected: Paper[] = [];
 
     for (let year = currentYear; year >= minYear; year--) {
       const papers = await this.searchOnce(query, limit, { year, category });
-      if (papers.length > 0) return papers;
+      collected.push(...papers);
+      if (collected.length >= limit * 2) break;
     }
 
-    return [];
+    return collected;
   }
 
   private async searchOnce(

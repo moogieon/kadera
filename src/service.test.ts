@@ -8,7 +8,7 @@ import { SemanticScholarClient } from "./clients/semanticScholar.js";
 import { rankPapers } from "./evidence.js";
 import { ClaimCheckerService } from "./service.js";
 import type { ClaimAnswer, EvidenceSearchResult } from "./types.js";
-import { buildQueryTerms, classifyCategory } from "./text.js";
+import { buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory } from "./text.js";
 
 const tempDirs: string[] = [];
 
@@ -51,6 +51,24 @@ describe("text pipeline", () => {
         "glucose metabolism"
       ])
     );
+  });
+
+  it("builds focused conjunctive queries for multi-concept claims", () => {
+    const proteinTerms = buildQueryTerms("단백질 파우더 하루에 100g 이상 먹으면 근성장과 신장에 어때?", "nutrition");
+    const proteinQuery = buildSearchQuery(proteinTerms, "nutrition");
+
+    expect(proteinQuery).toContain(" AND ");
+    expect(proteinQuery).toContain("kidney");
+    expect(proteinQuery).toContain("protein");
+
+    const sweetenerTerms = buildQueryTerms("제로 탄산이 설탕 탄산보다 더 나쁘고 감미료가 혈당에 안 좋아?", "nutrition");
+    const sweetenerQuery = buildSearchQuery(sweetenerTerms, "nutrition");
+
+    expect(sweetenerQuery).toContain(" AND ");
+    expect(sweetenerQuery).toContain("sweeteners");
+    expect(sweetenerQuery).toContain("glucose");
+
+    expect(buildLooseSearchQuery(proteinTerms, "nutrition")).not.toContain(" AND ");
   });
 
   it("maps infant eye contact concerns to developmental evidence terms", () => {
@@ -257,7 +275,7 @@ describe("GeminiRagClient", () => {
                 parts: [
                   {
                     text: JSON.stringify({
-                      answer_ko: "검색된 근거만 보면 효과가 있다는 방향이 더 강합니다.",
+                      answer_ko: "검색된 근거만 보면 효과가 있다는 방향이 더 강합니다[1]. 없는 출처는 제거됩니다[99].",
                       verdict: "supported",
                       limitations: ["개별 건강 상태에는 바로 적용할 수 없습니다."],
                       evidence_interpretation: [
@@ -285,6 +303,8 @@ describe("GeminiRagClient", () => {
     const answer = await client.synthesizeClaim("공복 유산소가 살 더 빠져?", sampleEvidence(), sampleFallback());
 
     expect(answer.answer_ko).toContain("효과가 있다는 방향");
+    expect(answer.answer_ko).toContain("[1]");
+    expect(answer.answer_ko).not.toContain("[99]");
     expect(answer.verdict).toBe("supported");
     expect(answer.citations).toHaveLength(1);
     expect(answer.evidence_interpretation).toHaveLength(1);
@@ -294,7 +314,7 @@ describe("GeminiRagClient", () => {
 });
 
 describe("SemanticScholarClient", () => {
-  it("searches from the current year backward when an API key is configured", async () => {
+  it("collects recent Semantic Scholar papers across years when an API key is configured", async () => {
     const requestedYears: string[] = [];
     const currentYear = new Date().getFullYear();
     const client = new SemanticScholarClient(
@@ -302,7 +322,11 @@ describe("SemanticScholarClient", () => {
       async (input) => {
         const url = new URL(String(input));
         requestedYears.push(url.searchParams.get("year") ?? "none");
-        if (url.searchParams.get("year") === String(currentYear)) {
+        const year = url.searchParams.get("year");
+        if (year === String(currentYear)) {
+          return jsonResponse({ data: [] });
+        }
+        if (year !== String(currentYear - 1)) {
           return jsonResponse({ data: [] });
         }
         return jsonResponse({
@@ -323,6 +347,7 @@ describe("SemanticScholarClient", () => {
     const papers = await client.search("infant eye contact", 3, "childcare");
 
     expect(requestedYears.slice(0, 2)).toEqual([String(currentYear), String(currentYear - 1)]);
+    expect(requestedYears).toContain(String(currentYear - 2));
     expect(papers).toHaveLength(1);
     expect(papers[0]?.title).toContain("Recent child development");
   });

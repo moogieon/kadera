@@ -60,6 +60,9 @@ export class GeminiRagClient {
         "Return strict JSON only.",
         "Translate the Korean claim into precise English scholarly search terms.",
         "Prefer medical/research vocabulary, age group, condition, outcome, and population.",
+        "For multi-part claims, include combined concepts, not only separate broad terms. Example: use 'high protein diet kidney function healthy adults', not only 'protein' and 'kidney function'.",
+        "Include at least one term that joins exposure/intervention with outcome when the question asks whether X affects Y.",
+        "For dosage questions, include dose-response and units such as g/kg/day when relevant.",
         "Do not answer the claim. Only plan retrieval.",
         "Return 4 to 8 query_terms.",
         "Do not include broad generic terms unless needed."
@@ -118,6 +121,8 @@ export class GeminiRagClient {
         "Use only the provided evidence items.",
         "Do not invent citations, titles, authors, DOIs, URLs, statistics, or paper findings.",
         "If the evidence is only tangential or too weak, return insufficient_evidence.",
+        "If fewer than 3 evidence items directly address the specific exposure/intervention AND outcome in the user's question, say the direct evidence is limited and avoid a strong verdict.",
+        "Do not treat a broad review as direct evidence unless its title or abstract matches the user's specific exposure/intervention and outcome.",
         "Preprints must be described as lower confidence than peer-reviewed systematic reviews or clinical studies.",
         "Answer in Korean for a general user, not as medical diagnosis or prescription.",
         "Synthesize the evidence like a person explaining what the papers say, not like a search result list.",
@@ -167,7 +172,7 @@ export class GeminiRagClient {
           }
         ]
       },
-      evidence: evidence.papers.slice(0, 8).map(toLlmEvidence)
+      evidence: evidence.papers.slice(0, fallback.citations.length).map(toLlmEvidence)
     };
 
     const response = await this.fetchFn(geminiUrl(this.config), {
@@ -227,12 +232,19 @@ function mergeGeminiAnswer(gemini: GeminiClaimJson, fallback: ClaimAnswer): Clai
 
   return {
     ...fallback,
-    answer_ko: gemini.answer_ko?.trim() || fallback.answer_ko,
+    answer_ko: sanitizeAnswerCitationRefs(gemini.answer_ko?.trim() || fallback.answer_ko, fallback.citations.length),
     verdict,
     evidence_interpretation: interpretations.length > 0 ? interpretations : fallback.evidence_interpretation,
     practical_checks: sanitizePracticalChecks(gemini.practical_checks, fallback.practical_checks),
     limitations: sanitizeLimitations(gemini.limitations, fallback.limitations)
   };
+}
+
+function sanitizeAnswerCitationRefs(answer: string, citationCount: number): string {
+  return answer.replace(/\[(\d+)\]/g, (match, rawIndex: string) => {
+    const index = Number(rawIndex);
+    return Number.isInteger(index) && index >= 1 && index <= citationCount ? match : "";
+  });
 }
 
 function sanitizeInterpretations(

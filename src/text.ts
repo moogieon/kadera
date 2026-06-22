@@ -62,12 +62,64 @@ export function buildQueryTerms(question: string, category: Exclude<Category, "a
 
 export function buildSearchQuery(terms: string[], category: Exclude<Category, "auto">): string {
   const categoryFilter = categorySearchFilters[category];
-  const termQuery = terms.length > 1 ? `(${terms.map(formatSearchTerm).join(" OR ")})` : terms[0];
+  const termQuery = buildFocusedTermQuery(terms) ?? (terms.length > 1 ? `(${terms.map(formatSearchTerm).join(" OR ")})` : terms[0]);
   return [termQuery, categoryFilter].filter(Boolean).join(" AND ");
+}
+
+export function buildLooseSearchQuery(terms: string[], category: Exclude<Category, "auto">): string {
+  const defaults = new Set(categoryDefaults[category].map((term) => term.toLowerCase()));
+  const picked = terms
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .filter((term) => !defaults.has(term.toLowerCase()))
+    .slice(0, 8);
+  return (picked.length > 0 ? picked : terms.slice(0, 8)).join(" ");
 }
 
 function formatSearchTerm(term: string): string {
   return /\s/.test(term) ? `"${term}"` : term;
+}
+
+function buildFocusedTermQuery(terms: string[]): string | undefined {
+  const lowered = terms.map((term) => term.toLowerCase());
+  const protein = pickTerms(terms, lowered, /(protein|whey)/, 5);
+  const kidney = pickTerms(terms, lowered, /(kidney|renal)/, 4);
+  const muscle = pickTerms(terms, lowered, /(muscle|hypertrophy|lean mass|resistance training)/, 4);
+  const sweetener = pickTerms(terms, lowered, /(sweetener|aspartame|sucralose|stevia|erythritol|acesulfame|diet soda|sugar-sweetened)/, 6);
+  const metabolic = pickTerms(terms, lowered, /(glucose|insulin|diabetes|microbiome|microbiota|metabolic)/, 5);
+  const eyeContact = pickTerms(terms, lowered, /(eye contact|gaze|joint attention|social attention)/, 5);
+  const development = pickTerms(terms, lowered, /(infant|toddler|autism|development|screening|social communication)/, 6);
+
+  if (protein.length > 0 && kidney.length > 0) {
+    return joinQueryGroups([protein, kidney], [...muscle, ...pickTerms(terms, lowered, /(dose|grams per kilogram|high protein)/, 4)]);
+  }
+  if (protein.length > 0 && muscle.length > 0) {
+    return joinQueryGroups([protein, muscle], pickTerms(terms, lowered, /(dose|grams per kilogram|high protein)/, 4));
+  }
+  if (sweetener.length > 0 && metabolic.length > 0) {
+    return joinQueryGroups([sweetener, metabolic], pickTerms(terms, lowered, /(beverage|diet soda|sugar-sweetened)/, 4));
+  }
+  if (eyeContact.length > 0 && development.length > 0) {
+    return joinQueryGroups([eyeContact, development], []);
+  }
+
+  return undefined;
+}
+
+function pickTerms(terms: string[], lowered: string[], pattern: RegExp, limit: number): string[] {
+  const picked: string[] = [];
+  for (const [index, term] of terms.entries()) {
+    if (!pattern.test(lowered[index] ?? "")) continue;
+    picked.push(term);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
+function joinQueryGroups(requiredGroups: string[][], optionalTerms: string[]): string {
+  const required = requiredGroups.filter((group) => group.length > 0).map((group) => `(${group.map(formatSearchTerm).join(" OR ")})`);
+  const optional = optionalTerms.length > 0 ? ` OR ${optionalTerms.map(formatSearchTerm).join(" OR ")}` : "";
+  return `(${required.join(" AND ")}${optional})`;
 }
 
 const categoryDefaults: Record<Exclude<Category, "auto">, string[]> = {

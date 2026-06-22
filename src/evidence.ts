@@ -25,12 +25,15 @@ export function strongestEvidenceLevel(papers: Paper[]): EvidenceLevel {
 }
 
 export function rankPapers(papers: Paper[], queryTerms: string[] = []): Paper[] {
-  const seen = new Set<string>();
+  const seenDoi = new Set<string>();
+  const seenTitle = new Set<string>();
   const deduped: Paper[] = [];
   for (const paper of papers) {
-    const key = (paper.doi ?? paper.title).toLowerCase().trim();
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const doiKey = paper.doi?.toLowerCase().trim();
+    const titleKey = normalizeTitle(paper.title);
+    if ((doiKey && seenDoi.has(doiKey)) || seenTitle.has(titleKey)) continue;
+    if (doiKey) seenDoi.add(doiKey);
+    seenTitle.add(titleKey);
     deduped.push(paper);
   }
 
@@ -42,7 +45,10 @@ export function rankPapers(papers: Paper[], queryTerms: string[] = []): Paper[] 
 
   const strong = humanOnly.filter((paper) => relevanceTokenHits(paper, highValueTokens) >= 2);
   const weak = humanOnly.filter((paper) => relevanceTokenHits(paper, highValueTokens) === 1);
-  return [...strong, ...weak].sort((a, b) => scorePaper(b, highValueTokens) - scorePaper(a, highValueTokens));
+  return [
+    ...strong.sort((a, b) => scorePaper(b, highValueTokens) - scorePaper(a, highValueTokens)),
+    ...weak.sort((a, b) => scorePaper(b, highValueTokens) - scorePaper(a, highValueTokens))
+  ];
 }
 
 function scorePaper(paper: Paper, highValueTokens: string[]): number {
@@ -57,7 +63,7 @@ function scorePaper(paper: Paper, highValueTokens: string[]): number {
   const yearScore = paper.year ? Math.max(0, Math.min(20, paper.year - 2005)) : 0;
   const citationScore = paper.citationCount ? Math.min(15, Math.log10(paper.citationCount + 1) * 5) : 0;
   const abstractScore = paper.abstract ? 5 : 0;
-  const relevanceScore = relevanceTokenHits(paper, highValueTokens) * 30;
+  const relevanceScore = relevanceTokenHits(paper, highValueTokens) * 45;
   return evidenceScore[paper.evidenceLevel] + yearScore + citationScore + abstractScore + relevanceScore;
 }
 
@@ -76,10 +82,15 @@ function extractHighValueTokens(queryTerms: string[]): string[] {
   const tokens = new Set<string>();
   for (const term of queryTerms) {
     for (const token of term.toLowerCase().split(/[^a-z0-9]+/)) {
-      if (highValueTokenAllowlist.has(token)) tokens.add(token);
+      if (rankingStopwords.has(token)) continue;
+      if (token.length >= 4 || highValueTokenAllowlist.has(token)) tokens.add(token);
     }
   }
   return [...tokens];
+}
+
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function escapeRegExp(value: string): string {
@@ -115,12 +126,17 @@ const highValueTokenAllowlist = new Set([
   "picky",
   "screen",
   "eye",
+  "contact",
   "gaze",
   "joint",
   "attention",
   "social",
   "communication",
+  "regression",
+  "milestone",
   "autism",
+  "spectrum",
+  "disorder",
   "infant",
   "infants",
   "toddler",
@@ -139,5 +155,49 @@ const highValueTokenAllowlist = new Set([
   "omega",
   "calcium",
   "kidney",
-  "renal"
+  "renal",
+  "sweetener",
+  "sweeteners",
+  "aspartame",
+  "sucralose",
+  "stevia",
+  "erythritol",
+  "acesulfame",
+  "beverage",
+  "beverages",
+  "soda",
+  "cola",
+  "diet",
+  "sugar",
+  "glucose",
+  "insulin",
+  "glycemic",
+  "microbiome",
+  "microbiota",
+  "metabolic",
+  "diabetes"
+]);
+
+const rankingStopwords = new Set([
+  "review",
+  "meta",
+  "analysis",
+  "systematic",
+  "clinical",
+  "trial",
+  "cohort",
+  "study",
+  "studies",
+  "health",
+  "nutrition",
+  "diet",
+  "child",
+  "children",
+  "adult",
+  "adults",
+  "effect",
+  "effects",
+  "impact",
+  "association",
+  "associated"
 ]);

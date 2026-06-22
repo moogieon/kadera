@@ -19,7 +19,7 @@ import { GeminiRagClient, type SearchPlan } from "./clients/gemini.js";
 import { composeAnswer } from "./answer.js";
 import { rankPapers } from "./evidence.js";
 import { screenSafety, standardSafetyNote } from "./safety.js";
-import { buildQueryTerms, buildSearchQuery, classifyCategory, normalizeQuestion } from "./text.js";
+import { buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory, normalizeQuestion } from "./text.js";
 import type { Category, ClaimAnswer, DataSourceStatus, EvidenceSearchResult, Paper, PopularClaim, SourceError, SourceTrace } from "./types.js";
 
 export interface CheckClaimInput {
@@ -117,6 +117,7 @@ export class ClaimCheckerService {
     const category = searchPlan.category;
     const queryTerms = searchPlan.queryTerms;
     const query = buildSearchQuery(queryTerms, category);
+    const looseQuery = buildLooseSearchQuery(queryTerms, category);
     const limit = Math.max(1, Math.min(input.limit ?? 5, 10));
     const sourceLimit = Math.max(limit, Math.min(25, limit * 5));
     const selectedLimit = Math.max(limit * 2, 10);
@@ -124,7 +125,7 @@ export class ClaimCheckerService {
     const sourceTraces: SourceTrace[] = [];
     const papers: Paper[] = [];
 
-    const jobs = this.searchJobs(category, query, input.question, sourceLimit);
+    const jobs = this.searchJobs(category, query, looseQuery, input.question, sourceLimit);
     const results = await Promise.allSettled(jobs.map((job) => job.run()));
 
     for (const [index, result] of results.entries()) {
@@ -377,41 +378,41 @@ export class ClaimCheckerService {
     this.cache.close();
   }
 
-  private searchJobs(category: Exclude<Category, "auto">, query: string, originalQuestion: string, limit: number): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
+  private searchJobs(category: Exclude<Category, "auto">, query: string, looseQuery: string, originalQuestion: string, limit: number): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
     const jobs: Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> = [
-      { source: "semantic_scholar", run: () => this.semanticScholar.search(query, limit, category) },
-      { source: "openalex", run: () => this.openAlex.search(query, limit) },
-      { source: "crossref", run: () => this.crossref.search(query, limit) }
+      { source: "semantic_scholar", run: () => this.semanticScholar.search(looseQuery, limit, category) },
+      { source: "openalex", run: () => this.openAlex.search(looseQuery, limit) },
+      { source: "crossref", run: () => this.crossref.search(looseQuery, limit) }
     ];
 
     if (["health", "childcare", "nutrition", "exercise", "psychology"].includes(category)) {
       jobs.unshift(
         { source: "pubmed", run: () => this.pubMed.search(query, limit) },
         { source: "europe_pmc", run: () => this.europePmc.search(query, limit) },
-        { source: "cochrane_crossref", run: () => this.crossref.search(query, limit, true) }
+        { source: "cochrane_crossref", run: () => this.crossref.search(looseQuery, limit, true) }
       );
     }
     if (category === "education") {
       jobs.unshift({ source: "eric", run: () => this.eric.search(query, limit) });
     }
     if (["health", "nutrition", "childcare"].includes(category)) {
-      jobs.push({ source: "myhealthfinder", run: () => this.myHealthfinder.search(query, Math.min(limit, 3)) });
-      jobs.push({ source: "who_gho", run: () => this.whoGho.search(query, Math.min(limit, 3)) });
-      jobs.push({ source: "cdc", run: () => this.cdc.search(query, Math.min(limit, 3)) });
+      jobs.push({ source: "myhealthfinder", run: () => this.myHealthfinder.search(looseQuery, Math.min(limit, 3)) });
+      jobs.push({ source: "who_gho", run: () => this.whoGho.search(looseQuery, Math.min(limit, 3)) });
+      jobs.push({ source: "cdc", run: () => this.cdc.search(looseQuery, Math.min(limit, 3)) });
     }
     if (this.core.enabled) {
-      jobs.push({ source: "core", run: () => this.core.search(query, limit) });
+      jobs.push({ source: "core", run: () => this.core.search(looseQuery, limit) });
     }
     if (["education", "psychology", "exercise", "nutrition"].includes(category)) {
-      jobs.push({ source: "arxiv", run: () => this.arxiv.search(query, Math.min(limit, 3)) });
+      jobs.push({ source: "arxiv", run: () => this.arxiv.search(looseQuery, Math.min(limit, 3)) });
     }
     if (category === "psychology") {
-      jobs.push({ source: "psyarxiv", run: () => this.osfPreprints.searchPsyArxiv(query, Math.min(limit, 3)) });
+      jobs.push({ source: "psyarxiv", run: () => this.osfPreprints.searchPsyArxiv(looseQuery, Math.min(limit, 3)) });
     }
     if (category === "health") {
       jobs.push(
-        { source: "biorxiv", run: () => this.biorxiv.recent(Math.min(limit, 3)) },
-        { source: "medrxiv", run: () => this.medrxiv.recent(Math.min(limit, 3)) }
+        { source: "biorxiv", run: async () => filterPapersByQuery(await this.biorxiv.recent(Math.min(limit, 3)), query) },
+        { source: "medrxiv", run: async () => filterPapersByQuery(await this.medrxiv.recent(Math.min(limit, 3)), query) }
       );
     }
     if (this.kci.enabled) {
@@ -479,7 +480,7 @@ export class ClaimCheckerService {
     if (populationContext && !answerKo.includes("대상자별로 보면")) {
       answerKo = `${answerKo}\n\n${populationContext}`;
     }
-    if (studyDigest && (!/대표 연구를 (뜯어|짧게) 보면/.test(answerKo) || !answerKo.includes("무엇을 했나"))) {
+    if (studyDigest && !/대표 연구를 (뜯어|짧게) 보면/.test(answerKo)) {
       answerKo = `${answerKo}\n\n${studyDigest}`;
     }
     if (answerKo === answer.answer_ko) return answer;
@@ -747,8 +748,39 @@ function shouldKeepFallbackCategory(
 ): boolean {
   if (fallbackCategory === plannedCategory) return false;
   if (fallbackCategory !== "childcare") return false;
-  return /(아이|아기|영아|유아|개월|눈.?마주|눈맞춤|시선|자폐|발달)/.test(question);
+  return /(아이|애|아기|영아|영유아|유아|어린이|소아|청소년|초등|개월|돌|육아|분유|이유식|편식|눈.?마주|눈맞춤|시선|자폐|발달)/.test(question);
 }
+
+function filterPapersByQuery(papers: Paper[], query: string): Paper[] {
+  const tokens = [...new Set(query.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [])].filter((token) => !queryStopwords.has(token));
+  if (tokens.length === 0) return papers;
+  return papers.filter((paper) => {
+    const haystack = `${paper.title} ${paper.abstract ?? ""} ${paper.publicationTypes.join(" ")}`.toLowerCase();
+    return tokens.some((token) => haystack.includes(token));
+  });
+}
+
+const queryStopwords = new Set([
+  "review",
+  "clinical",
+  "trial",
+  "cohort",
+  "study",
+  "studies",
+  "health",
+  "nutrition",
+  "diet",
+  "child",
+  "infant",
+  "toddler",
+  "pediatric",
+  "development",
+  "physical",
+  "activity",
+  "exercise",
+  "psychology",
+  "mental"
+]);
 
 
 function errorMessage(error: unknown): string {
