@@ -141,7 +141,7 @@ function renderAnswer(result) {
     .join("");
 
   answer.innerHTML = `
-    <p>${escapeHtml(result.answer_ko)}</p>
+    <div class="answer-body">${formatAnswerBody(result.answer_ko)}</div>
     <div class="answer-meta">
       <span>카테고리 ${escapeHtml(result.category)}</span>
       <span>검색어 ${escapeHtml(result.query_terms.join(", "))}</span>
@@ -155,6 +155,143 @@ function renderAnswer(result) {
     <h3>한계</h3>
     <ul>${result.limitations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
   `;
+}
+
+function formatAnswerBody(value) {
+  const sections = dedupeAnswerSections(splitAnswerSections(value));
+  return sections.map(renderAnswerSection).join("");
+}
+
+function splitAnswerSections(value) {
+  const labels = [
+    "판정",
+    "누가 맞나",
+    "숫자로 보면",
+    "성인 예시",
+    "논문/연구가 실제로 말하는 것",
+    "연구가 실제로 한 일",
+    "감미료별로 보면",
+    "성분/제품 라벨에서 볼 것",
+    "틀리기 쉬운 포인트",
+    "내가 확인할 것",
+    "근거 기반 상세 해석",
+    "대상자별로 보면",
+    "대표 연구를 짧게 보면",
+    "대표 연구를 뜯어보면",
+    "더 정확히 보려면"
+  ];
+  const pattern = new RegExp(`(^|\\s)(${labels.map(escapeRegExp).join("|")}):`, "g");
+  const normalized = String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\*\*/g, "")
+    .replace(/^#{1,4}\s*/gm, "")
+    .replace(pattern, "\n\n$2:")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  return blocks.length ? blocks : [String(value ?? "")];
+}
+
+function dedupeAnswerSections(blocks) {
+  const byHeading = new Map();
+  const output = [];
+
+  for (const block of blocks) {
+    const heading = answerHeadingOf(block);
+    if (!heading) {
+      output.push(block);
+      continue;
+    }
+
+    const key = heading.startsWith("대표 연구") ? "대표 연구" : heading;
+    const existingIndex = byHeading.get(key);
+    if (existingIndex === undefined) {
+      byHeading.set(key, output.length);
+      output.push(block);
+      continue;
+    }
+
+    if (key === "대표 연구" && block.includes("무엇을 했나")) {
+      output[existingIndex] = block;
+    }
+  }
+
+  const hasStructuredAnswer = output.some((block) => ["판정", "누가 맞나"].includes(answerHeadingOf(block)));
+
+  return output.filter((block) => {
+    const heading = answerHeadingOf(block);
+    if (hasStructuredAnswer && heading === "근거 기반 상세 해석") return false;
+    const body = heading ? block.slice(block.indexOf(":") + 1).trim() : block.trim();
+    return body.length > 0;
+  });
+}
+
+function answerHeadingOf(block) {
+  const match = String(block ?? "").match(/^([^:\n]{2,40}):/);
+  if (!match) return undefined;
+  const heading = match[1].trim();
+  return isKnownAnswerHeading(heading) ? heading : undefined;
+}
+
+function renderAnswerSection(block) {
+  const match = block.match(/^([^:\n]{2,40}):\s*([\s\S]*)$/);
+  if (match && isKnownAnswerHeading(match[1])) {
+    const heading = match[1].trim();
+    const body = match[2].trim();
+    const className = heading.startsWith("대표 연구") ? "answer-section evidence-summary" : "answer-section";
+    return `
+      <section class="${className}">
+        <h3>${escapeHtml(heading)}</h3>
+        ${renderSectionContent(body, heading)}
+      </section>
+    `;
+  }
+  return `<section class="answer-section">${renderSectionContent(block)}</section>`;
+}
+
+function renderSectionContent(value, heading = "") {
+  const lines = splitSectionLines(String(value ?? ""), heading);
+  if (lines.length > 1 || lines.some((line) => /^(\[\d+\]|\d+\.)\s/.test(line))) {
+    return `<ul>${lines.map((line) => `<li>${escapeHtml(cleanListMarker(line))}</li>`).join("")}</ul>`;
+  }
+  return `<p>${escapeHtml(value)}</p>`;
+}
+
+function splitSectionLines(value, heading) {
+  const baseLines = value.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (baseLines.length > 1) return baseLines;
+  if (["감미료별로 보면", "성분/제품 라벨에서 볼 것", "내가 확인할 것"].includes(heading)) {
+    return value
+      .split(/(?<=다\.|요\.|니다\.|세요\.)\s+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+  return baseLines;
+}
+
+function cleanListMarker(value) {
+  return value.replace(/^\s*[-*]\s+/, "");
+}
+
+function isKnownAnswerHeading(value) {
+  return [
+    "판정",
+    "누가 맞나",
+    "숫자로 보면",
+    "성인 예시",
+    "논문/연구가 실제로 말하는 것",
+    "연구가 실제로 한 일",
+    "감미료별로 보면",
+    "성분/제품 라벨에서 볼 것",
+    "틀리기 쉬운 포인트",
+    "내가 확인할 것",
+    "근거 기반 상세 해석",
+    "대상자별로 보면",
+    "대표 연구를 짧게 보면",
+    "대표 연구를 뜯어보면",
+    "더 정확히 보려면"
+  ].includes(value.trim());
 }
 
 function renderPapers(items) {
@@ -252,4 +389,8 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
   return escapeHtml(value).replaceAll("`", "&#096;");
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
