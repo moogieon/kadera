@@ -15,6 +15,23 @@ const copyJson = document.querySelector("#copyJson");
 
 let lastJson = {};
 
+const answerHeadings = [
+  "판정",
+  "누가 맞나",
+  "숫자로 보면",
+  "성인 예시",
+  "논문/연구가 실제로 말하는 것",
+  "연구가 실제로 한 일",
+  "감미료별로 보면",
+  "성분/제품 라벨에서 볼 것",
+  "틀리기 쉬운 포인트",
+  "내가 확인할 것",
+  "근거 기반 상세 해석",
+  "대상자별로 보면",
+  "대표 연구를 짧게 보면",
+  "대표 연구를 뜯어보면"
+];
+
 boot();
 
 form.addEventListener("submit", async (event) => {
@@ -119,7 +136,7 @@ function renderAnswer(result) {
       const venue = citation.venue ? `, ${escapeHtml(citation.venue)}` : "";
       const publisher = citation.publisher ? `, ${escapeHtml(citation.publisher)}` : "";
       const institutions = citation.institutions?.length ? `, 기관 ${escapeHtml(citation.institutions.slice(0, 2).join(", "))}` : "";
-      return `<li><a href="${escapeAttribute(citation.url)}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(citation.title)}</a><span>${escapeHtml(citation.source)}${year}${venue}${publisher}${institutions}${doi}</span></li>`;
+      return `<li><a href="${escapeAttribute(safeUrl(citation.url))}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(citation.title)}</a><span>${escapeHtml(citation.source)}${year}${venue}${publisher}${institutions}${doi}</span></li>`;
     })
     .join("");
 
@@ -160,23 +177,7 @@ function formatAnswerBody(value) {
 }
 
 function splitAnswerSections(value) {
-  const labels = [
-    "판정",
-    "누가 맞나",
-    "숫자로 보면",
-    "성인 예시",
-    "논문/연구가 실제로 말하는 것",
-    "연구가 실제로 한 일",
-    "감미료별로 보면",
-    "성분/제품 라벨에서 볼 것",
-    "틀리기 쉬운 포인트",
-    "내가 확인할 것",
-    "근거 기반 상세 해석",
-    "대상자별로 보면",
-    "대표 연구를 짧게 보면",
-    "대표 연구를 뜯어보면"
-  ];
-  const pattern = new RegExp(`(^|\\s)(${labels.map(escapeRegExp).join("|")}):`, "g");
+  const pattern = new RegExp(`(^|\\s)(${answerHeadings.map(escapeRegExp).join("|")}):`, "g");
   const normalized = String(value ?? "")
     .replace(/\r\n/g, "\n")
     .replace(/\*\*/g, "")
@@ -271,22 +272,7 @@ function cleanListMarker(value) {
 }
 
 function isKnownAnswerHeading(value) {
-  return [
-    "판정",
-    "누가 맞나",
-    "숫자로 보면",
-    "성인 예시",
-    "논문/연구가 실제로 말하는 것",
-    "연구가 실제로 한 일",
-    "감미료별로 보면",
-    "성분/제품 라벨에서 볼 것",
-    "틀리기 쉬운 포인트",
-    "내가 확인할 것",
-    "근거 기반 상세 해석",
-    "대상자별로 보면",
-    "대표 연구를 짧게 보면",
-    "대표 연구를 뜯어보면"
-  ].includes(value.trim());
+  return answerHeadings.includes(value.trim());
 }
 
 function renderPapers(items) {
@@ -307,11 +293,11 @@ function renderPapers(items) {
           <div class="paper-top">
             <span class="paper-index">${index + 1}</span>
           <span class="source">${escapeHtml(paper.source)}</span>
-          <span class="level">${escapeHtml(paper.evidenceLevel)}</span>
+          <span class="level">${escapeHtml(paper.evidenceLevel || "unknown")}</span>
           ${paper.venue ? `<span class="level">${escapeHtml(paper.venue)}</span>` : ""}
           <span class="year">${paper.year || ""}</span>
         </div>
-          <h3><a href="${escapeAttribute(paper.url)}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h3>
+          <h3><a href="${escapeAttribute(safeUrl(paper.url))}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h3>
           <p class="authors">${escapeHtml(authors)}</p>
           <p>${abstract}</p>
         </article>
@@ -388,4 +374,13 @@ function escapeAttribute(value) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function safeUrl(value) {
+  try {
+    const url = new URL(String(value ?? ""), window.location.href);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "#";
+  } catch {
+    return "#";
+  }
 }
