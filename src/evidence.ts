@@ -69,7 +69,7 @@ function scorePaper(paper: Paper, highValueTokens: string[]): number {
 
 function relevanceTokenHits(paper: Paper, highValueTokens: string[]): number {
   const haystack = ` ${paper.title} ${paper.abstract ?? ""} ${paper.publicationTypes.join(" ")} `.toLowerCase();
-  return highValueTokens.filter((token) => new RegExp(`\\b${escapeRegExp(token)}\\b`, "i").test(haystack)).length;
+  return highValueTokens.filter((token) => tokenMatches(haystack, token)).length;
 }
 
 function isAnimalOnlyPaper(paper: Paper): boolean {
@@ -81,12 +81,21 @@ function isAnimalOnlyPaper(paper: Paper): boolean {
 function extractHighValueTokens(queryTerms: string[]): string[] {
   const tokens = new Set<string>();
   for (const term of queryTerms) {
-    for (const token of term.toLowerCase().split(/[^a-z0-9]+/)) {
+    for (const token of term.toLowerCase().split(/[^a-z0-9가-힣]+/)) {
       if (rankingStopwords.has(token)) continue;
-      if (token.length >= 4 || highValueTokenAllowlist.has(token)) tokens.add(token);
+      if (containsKorean(token) || token.length >= 4 || highValueTokenAllowlist.has(token)) tokens.add(token);
     }
   }
   return [...tokens];
+}
+
+function tokenMatches(haystack: string, token: string): boolean {
+  if (containsKorean(token)) return haystack.includes(token);
+  return new RegExp(`\\b${escapeRegExp(token)}\\b`, "i").test(haystack);
+}
+
+function containsKorean(value: string): boolean {
+  return /[가-힣]/.test(value);
 }
 
 function normalizeTitle(title: string): string {
@@ -199,5 +208,14 @@ const rankingStopwords = new Set([
   "effects",
   "impact",
   "association",
-  "associated"
+  "associated",
+  "발달",
+  "영유아",
+  "유아",
+  "소아",
+  "아동",
+  "섭취",
+  "기능",
+  "운동",
+  "연구"
 ]);

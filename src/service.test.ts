@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import { GeminiRagClient } from "./clients/gemini.js";
+import { KciClient } from "./clients/kci.js";
 import { SemanticScholarClient } from "./clients/semanticScholar.js";
 import { rankPapers } from "./evidence.js";
 import { ClaimCheckerService } from "./service.js";
 import type { ClaimAnswer, EvidenceSearchResult } from "./types.js";
-import { buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory } from "./text.js";
+import { buildKoreanSearchQueries, buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory } from "./text.js";
 
 const tempDirs: string[] = [];
 
@@ -77,6 +78,9 @@ describe("text pipeline", () => {
     expect(buildQueryTerms("12개월 아이가 눈 마주침이 잘 안되는데 문제가 있을까?", "childcare")).toEqual(
       expect.arrayContaining(["eye contact", "gaze behavior", "social attention", "autism spectrum disorder", "developmental screening", "infant", "toddler"])
     );
+    expect(buildKoreanSearchQueries("12개월 아이가 눈 마주침이 잘 안되는데 문제가 있을까?", "childcare")).toEqual(
+      expect.arrayContaining(["눈맞춤", "공동주의", "영유아 발달", "발달선별검사"])
+    );
   });
 });
 
@@ -99,6 +103,26 @@ describe("evidence ranking", () => {
 
     expect(ranked.map((paper) => paper.sourceId)).toEqual(expect.arrayContaining(["1", "2", "3", "4", "6"]));
     expect(ranked.map((paper) => paper.sourceId)).not.toContain("5");
+  });
+
+  it("ranks Korean KCI papers using Korean query tokens", () => {
+    const papers = [
+      testPaper("1", "Unrelated adult nutrition review"),
+      {
+        ...testPaper("kci-1", "한국형 영유아 발달선별검사 부모용 도구 개발을 위한 예비연구"),
+        source: "kci" as const,
+        publicationTypes: ["KCI", "articleSearch"]
+      },
+      {
+        ...testPaper("kci-2", "눈맞춤과 공동주의를 활용한 영유아 사회성 발달 연구"),
+        source: "kci" as const,
+        publicationTypes: ["KCI", "articleSearch"]
+      }
+    ];
+
+    const ranked = rankPapers(papers, ["eye contact", "joint attention", "눈맞춤", "공동주의", "발달선별검사"]);
+
+    expect(ranked.map((paper) => paper.sourceId)).toEqual(expect.arrayContaining(["kci-1", "kci-2"]));
   });
 });
 
@@ -350,6 +374,53 @@ describe("SemanticScholarClient", () => {
     expect(requestedYears).toContain(String(currentYear - 2));
     expect(papers).toHaveLength(1);
     expect(papers[0]?.title).toContain("Recent child development");
+  });
+});
+
+describe("KciClient", () => {
+  it("parses articleSearch and referenceSearch records", async () => {
+    const client = new KciClient(
+      loadConfig({ KCI_API_KEY: "test-kci-key" }),
+      async (input) => {
+        const url = new URL(String(input));
+        if (url.searchParams.get("apiCode") === "articleSearch") {
+          return textResponse(`
+            <MetaData>
+              <outputData>
+                <result><total>1</total></result>
+                <record>
+                  <journalInfo>
+                    <journal-name>아동학회지</journal-name>
+                    <publisher-name>한국아동학회</publisher-name>
+                    <pub-year>2025</pub-year>
+                  </journalInfo>
+                  <articleInfo article-id="ART123">
+                    <article-categories>생활과학</article-categories>
+                    <title-group><article-title lang="original"><![CDATA[한국형 영유아 발달선별검사 부모용 도구 개발]]></article-title></title-group>
+                    <author-group><author>김연구</author></author-group>
+                    <abstract-group><abstract><![CDATA[영유아 발달선별검사 도구를 개발했다.]]></abstract></abstract-group>
+                  </articleInfo>
+                </record>
+              </outputData>
+            </MetaData>
+          `);
+        }
+        return textResponse(`
+          <MetaData>
+            <outputData>
+              <result><total>1</total></result>
+              <record article-id="ART456">홍순옥, 김인순, 박순호. 『영유아 발달』. 파주: 양서원, 2017.</record>
+            </outputData>
+          </MetaData>
+        `);
+      }
+    );
+
+    const papers = await client.search("영유아 발달", 5);
+
+    expect(papers.map((paper) => paper.sourceId)).toEqual(expect.arrayContaining(["ART123", "ART456"]));
+    expect(papers.find((paper) => paper.sourceId === "ART456")?.title).toBe("영유아 발달");
+    expect(papers.find((paper) => paper.sourceId === "ART456")?.year).toBe(2017);
   });
 });
 

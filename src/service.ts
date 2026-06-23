@@ -19,7 +19,7 @@ import { GeminiRagClient, type SearchPlan } from "./clients/gemini.js";
 import { composeAnswer } from "./answer.js";
 import { rankPapers } from "./evidence.js";
 import { screenSafety, standardSafetyNote } from "./safety.js";
-import { buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory, normalizeQuestion } from "./text.js";
+import { buildKoreanSearchQueries, buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory, normalizeQuestion } from "./text.js";
 import type { Category, ClaimAnswer, DataSourceStatus, EvidenceSearchResult, Paper, PopularClaim, SourceError, SourceTrace } from "./types.js";
 
 export interface CheckClaimInput {
@@ -118,6 +118,7 @@ export class ClaimCheckerService {
     const queryTerms = searchPlan.queryTerms;
     const query = buildSearchQuery(queryTerms, category);
     const looseQuery = buildLooseSearchQuery(queryTerms, category);
+    const koreanQueries = buildKoreanSearchQueries(input.question, category);
     const limit = Math.max(1, Math.min(input.limit ?? 5, 10));
     const sourceLimit = Math.max(limit, Math.min(25, limit * 5));
     const selectedLimit = Math.max(limit * 2, 10);
@@ -125,7 +126,7 @@ export class ClaimCheckerService {
     const sourceTraces: SourceTrace[] = [];
     const papers: Paper[] = [];
 
-    const jobs = this.searchJobs(category, query, looseQuery, input.question, sourceLimit);
+    const jobs = this.searchJobs(category, query, looseQuery, koreanQueries, input.question, sourceLimit);
     const results = await Promise.allSettled(jobs.map((job) => job.run()));
 
     for (const [index, result] of results.entries()) {
@@ -147,10 +148,12 @@ export class ClaimCheckerService {
       }
     }
 
+    const rankedPapers = rankPapers(papers, [...queryTerms, ...koreanQueries]);
+
     return {
       category,
       queryTerms,
-      papers: rankPapers(papers, queryTerms).slice(0, selectedLimit),
+      papers: ensureKoreanCoverage(rankedPapers, papers, selectedLimit),
       sourceErrors,
       sourceTraces
     };
@@ -378,7 +381,14 @@ export class ClaimCheckerService {
     this.cache.close();
   }
 
-  private searchJobs(category: Exclude<Category, "auto">, query: string, looseQuery: string, originalQuestion: string, limit: number): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
+  private searchJobs(
+    category: Exclude<Category, "auto">,
+    query: string,
+    looseQuery: string,
+    koreanQueries: string[],
+    originalQuestion: string,
+    limit: number
+  ): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
     const jobs: Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> = [
       { source: "semantic_scholar", run: () => this.semanticScholar.search(looseQuery, limit, category) },
       { source: "openalex", run: () => this.openAlex.search(looseQuery, limit) },
@@ -416,10 +426,10 @@ export class ClaimCheckerService {
       );
     }
     if (this.kci.enabled) {
-      jobs.push({ source: "kci", run: () => this.kci.search(originalQuestion, limit) });
+      jobs.push({ source: "kci", run: () => searchKoreanSources(koreanQueries, originalQuestion, limit, (searchQuery) => this.kci.search(searchQuery, limit)) });
     }
     if (this.riss.enabled) {
-      jobs.push({ source: "riss", run: () => this.riss.search(originalQuestion, limit) });
+      jobs.push({ source: "riss", run: () => searchKoreanSources(koreanQueries, originalQuestion, limit, (searchQuery) => this.riss.search(searchQuery, limit)) });
     }
 
     return jobs;
@@ -781,6 +791,37 @@ const queryStopwords = new Set([
   "psychology",
   "mental"
 ]);
+
+function ensureKoreanCoverage(rankedPapers: Paper[], allPapers: Paper[], selectedLimit: number): Paper[] {
+  const selected = rankedPapers.slice(0, selectedLimit);
+  if (selected.some((paper) => paper.source === "kci" || paper.source === "riss")) return selected;
+
+  const koreanPaper =
+    rankedPapers.find((paper) => paper.source === "kci" || paper.source === "riss") ??
+    allPapers.find((paper) => paper.source === "kci" || paper.source === "riss");
+  if (!koreanPaper) return selected;
+
+  const head = selected.slice(0, 4);
+  const tail = selected.slice(4).filter((paper) => paper.sourceId !== koreanPaper.sourceId);
+  return [...head, koreanPaper, ...tail].slice(0, selectedLimit);
+}
+
+async function searchKoreanSources(
+  koreanQueries: string[],
+  originalQuestion: string,
+  limit: number,
+  search: (query: string) => Promise<Paper[]>
+): Promise<Paper[]> {
+  const queries = koreanQueries.length > 0 ? koreanQueries : [originalQuestion];
+  const results = await Promise.allSettled(queries.slice(0, 5).map((query) => search(query)));
+  const papers = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  if (papers.length > 0) return papers.slice(0, Math.max(limit, 10) * 2);
+  const errors = results
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)));
+  if (errors.length > 0) throw new Error(errors.join("; "));
+  return [];
+}
 
 
 function errorMessage(error: unknown): string {

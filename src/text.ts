@@ -60,6 +60,58 @@ export function buildQueryTerms(question: string, category: Exclude<Category, "a
   return [...terms].slice(0, 20);
 }
 
+export function buildKoreanSearchQueries(question: string, category: Exclude<Category, "auto">): string[] {
+  const q = normalizeQuestion(question);
+  const queries = new Set<string>();
+
+  if (category === "childcare") {
+    if (/(눈.?마주|눈맞춤|시선|아이컨택)/.test(q)) {
+      ["눈맞춤", "공동주의", "영유아 발달", "발달선별검사", "자폐"].forEach((term) => queries.add(term));
+    }
+    if (/(발달지연|발달|사회성|상호작용|개월|아기|아이|영유아|유아)/.test(q)) {
+      ["영유아 발달", "발달지연", "발달선별검사"].forEach((term) => queries.add(term));
+    }
+    if (/(편식|고기|이유식|분유)/.test(q)) {
+      ["영유아 영양", "이유식", "편식"].forEach((term) => queries.add(term));
+    }
+  }
+
+  if (category === "nutrition") {
+    if (/(단백질|프로틴|파우더|보충제)/.test(q)) {
+      ["단백질 섭취", "고단백 식이", "단백질 보충제"].forEach((term) => queries.add(term));
+    }
+    if (/(신장|콩팥|신부전)/.test(q)) {
+      ["신장 기능", "만성콩팥병", "고단백 식이"].forEach((term) => queries.add(term));
+    }
+    if (/(제로|무설탕|탄산|감미료|아스파탐|수크랄로스|스테비아)/.test(q)) {
+      ["인공감미료", "비당류 감미료", "제로 음료", "혈당"].forEach((term) => queries.add(term));
+    }
+  }
+
+  if (category === "exercise") {
+    if (/(근성장|근비대|근육|헬스|저항운동)/.test(q)) {
+      ["저항운동", "근비대", "근육량"].forEach((term) => queries.add(term));
+    }
+    if (/(공복|유산소|러닝|달리기)/.test(q)) {
+      ["공복 운동", "유산소 운동", "체중 감량"].forEach((term) => queries.add(term));
+    }
+  }
+
+  if (category === "psychology") {
+    if (/(수면|잠)/.test(q)) queries.add("수면");
+    if (/(불안|우울|스트레스)/.test(q)) ["불안", "우울", "스트레스"].forEach((term) => queries.add(term));
+  }
+
+  if (category === "education") {
+    if (/(학습|공부|교육|집중|암기)/.test(q)) ["학습", "교육", "집중력"].forEach((term) => queries.add(term));
+  }
+
+  const compactQuestion = question.replace(/[?!.,;:，。！？'"`“”‘’()[\]{}<>]/g, " ").replace(/\s+/g, " ").trim();
+  if (compactQuestion.length >= 2 && compactQuestion.length <= 20) queries.add(compactQuestion);
+
+  return [...queries].slice(0, 5);
+}
+
 export function buildSearchQuery(terms: string[], category: Exclude<Category, "auto">): string {
   const categoryFilter = categorySearchFilters[category];
   const termQuery = buildFocusedTermQuery(terms) ?? (terms.length > 1 ? `(${terms.map(formatSearchTerm).join(" OR ")})` : terms[0]);

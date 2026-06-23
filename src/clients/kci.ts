@@ -14,6 +14,8 @@ interface KciRoot {
 }
 
 interface KciRecord {
+  "#text"?: unknown;
+  "@_article-id"?: string;
   journalInfo?: {
     "journal-name"?: unknown;
     "publisher-name"?: unknown;
@@ -91,6 +93,8 @@ export class KciClient {
 }
 
 function toPaper(record: KciRecord, apiCode: "articleSearch" | "referenceSearch"): Paper | undefined {
+  if (apiCode === "referenceSearch") return referenceToPaper(record);
+
   const articleInfo = record.articleInfo;
   const journalInfo = record.journalInfo;
   const id =
@@ -126,6 +130,53 @@ function toPaper(record: KciRecord, apiCode: "articleSearch" | "referenceSearch"
     evidenceLevel: "unknown",
     raw: record
   };
+}
+
+function referenceToPaper(record: KciRecord): Paper | undefined {
+  const reference = text(record);
+  if (!reference) return undefined;
+  const id = record["@_article-id"] ?? reference;
+  const title = referenceTitle(reference);
+  const yearMatch = reference.match(/\b(19|20)\d{2}\b/);
+  const year = yearMatch ? Number(yearMatch[0]) : undefined;
+  return {
+    source: "kci",
+    sourceId: id,
+    title,
+    authors: referenceAuthors(reference),
+    venue: "KCI reference",
+    publisher: "Korea Citation Index",
+    year: Number.isFinite(year) ? year : undefined,
+    url: "https://www.kci.go.kr/",
+    abstract: reference,
+    publicationTypes: ["KCI", "referenceSearch"],
+    evidenceLevel: "unknown",
+    raw: record
+  };
+}
+
+function referenceTitle(reference: string): string {
+  const koreanBookTitle = reference.match(/『([^』]+)』/);
+  if (koreanBookTitle?.[1]) return koreanBookTitle[1].trim();
+
+  const afterYear = reference.match(/\((?:19|20)\d{2}\)\.\s*([^.;。]+)/);
+  if (afterYear?.[1]) return afterYear[1].trim();
+
+  const sentences = reference
+    .split(".")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return sentences.length > 1 ? sentences[1] ?? sentences[0] : reference.slice(0, 120);
+}
+
+function referenceAuthors(reference: string): string[] {
+  const beforeTitle = reference.split(/『|\((?:19|20)\d{2}\)/)[0] ?? "";
+  return beforeTitle
+    .replace(/\.$/, "")
+    .split(/,|，|·|ㆍ|&| and /i)
+    .map((author) => author.trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function text(value: unknown): string | undefined {
