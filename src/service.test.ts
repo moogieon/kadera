@@ -9,7 +9,15 @@ import { SemanticScholarClient } from "./clients/semanticScholar.js";
 import { rankPapers } from "./evidence.js";
 import { ClaimCheckerService } from "./service.js";
 import type { ClaimAnswer, EvidenceSearchResult } from "./types.js";
-import { buildKoreanSearchQueries, buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory } from "./text.js";
+import {
+  buildFocusedSearchQueries,
+  buildKoreanSearchQueries,
+  buildLooseSearchQueries,
+  buildLooseSearchQuery,
+  buildQueryTerms,
+  buildSearchQuery,
+  classifyCategory
+} from "./text.js";
 
 const tempDirs: string[] = [];
 
@@ -70,6 +78,30 @@ describe("text pipeline", () => {
     expect(sweetenerQuery).toContain("glucose");
 
     expect(buildLooseSearchQuery(proteinTerms, "nutrition")).not.toContain(" AND ");
+  });
+
+  it("expands obesity food questions into multiple evidence search axes", () => {
+    const question = "비만에 안 좋은 음식이 뭐가 있어?";
+    const terms = buildQueryTerms(question, "health");
+
+    expect(terms).toEqual(
+      expect.arrayContaining(["ultra-processed foods obesity", "sugar-sweetened beverages obesity", "fast food obesity"])
+    );
+    expect(buildFocusedSearchQueries(question, terms, "health")).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("ultra-processed foods"),
+        expect.stringContaining("sugar-sweetened beverages")
+      ])
+    );
+    expect(buildLooseSearchQueries(question, terms, "health")).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("ultra-processed foods"),
+        expect.stringContaining("fast food")
+      ])
+    );
+    expect(buildKoreanSearchQueries(question, "health")).toEqual(
+      expect.arrayContaining(["비만 식습관", "가공식품", "당류 음료", "패스트푸드"])
+    );
   });
 
   it("maps infant eye contact concerns to developmental evidence terms", () => {

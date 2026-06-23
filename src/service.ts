@@ -19,7 +19,14 @@ import { GeminiRagClient, type SearchPlan } from "./clients/gemini.js";
 import { composeAnswer } from "./answer.js";
 import { rankPapers } from "./evidence.js";
 import { screenSafety, standardSafetyNote } from "./safety.js";
-import { buildKoreanSearchQueries, buildLooseSearchQuery, buildQueryTerms, buildSearchQuery, classifyCategory, normalizeQuestion } from "./text.js";
+import {
+  buildFocusedSearchQueries,
+  buildKoreanSearchQueries,
+  buildLooseSearchQueries,
+  buildQueryTerms,
+  classifyCategory,
+  normalizeQuestion
+} from "./text.js";
 import type { Category, ClaimAnswer, DataSourceStatus, EvidenceSearchResult, Paper, PopularClaim, SourceError, SourceTrace } from "./types.js";
 
 export interface CheckClaimInput {
@@ -116,8 +123,8 @@ export class ClaimCheckerService {
     const searchPlan = await this.planSearch(input.question, fallbackCategory, fallbackQueryTerms);
     const category = searchPlan.category;
     const queryTerms = searchPlan.queryTerms;
-    const query = buildSearchQuery(queryTerms, category);
-    const looseQuery = buildLooseSearchQuery(queryTerms, category);
+    const queries = buildFocusedSearchQueries(input.question, queryTerms, category);
+    const looseQueries = buildLooseSearchQueries(input.question, queryTerms, category);
     const koreanQueries = buildKoreanSearchQueries(input.question, category);
     const limit = Math.max(1, Math.min(input.limit ?? 5, 10));
     const sourceLimit = Math.max(limit, Math.min(25, limit * 5));
@@ -126,7 +133,7 @@ export class ClaimCheckerService {
     const sourceTraces: SourceTrace[] = [];
     const papers: Paper[] = [];
 
-    const jobs = this.searchJobs(category, query, looseQuery, koreanQueries, input.question, sourceLimit);
+    const jobs = this.searchJobs(category, queries, looseQueries, koreanQueries, input.question, sourceLimit);
     const results = await Promise.allSettled(jobs.map((job) => job.run()));
 
     for (const [index, result] of results.entries()) {
@@ -383,48 +390,48 @@ export class ClaimCheckerService {
 
   private searchJobs(
     category: Exclude<Category, "auto">,
-    query: string,
-    looseQuery: string,
+    queries: string[],
+    looseQueries: string[],
     koreanQueries: string[],
     originalQuestion: string,
     limit: number
   ): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
     const jobs: Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> = [
-      { source: "openalex", run: () => this.openAlex.search(looseQuery, limit) },
-      { source: "crossref", run: () => this.crossref.search(looseQuery, limit) }
+      { source: "openalex", run: () => searchQueryVariants(looseQueries, limit, (searchQuery, perQueryLimit) => this.openAlex.search(searchQuery, perQueryLimit)) },
+      { source: "crossref", run: () => searchQueryVariants(looseQueries, limit, (searchQuery, perQueryLimit) => this.crossref.search(searchQuery, perQueryLimit)) }
     ];
     if (this.semanticScholar.enabled) {
-      jobs.unshift({ source: "semantic_scholar", run: () => this.semanticScholar.search(looseQuery, limit, category) });
+      jobs.unshift({ source: "semantic_scholar", run: () => searchQueryVariants(looseQueries, limit, (searchQuery, perQueryLimit) => this.semanticScholar.search(searchQuery, perQueryLimit, category)) });
     }
 
     if (["health", "childcare", "nutrition", "exercise", "psychology"].includes(category)) {
       jobs.unshift(
-        { source: "pubmed", run: () => this.pubMed.search(query, limit) },
-        { source: "europe_pmc", run: () => this.europePmc.search(query, limit) },
-        { source: "cochrane_crossref", run: () => this.crossref.search(looseQuery, limit, true) }
+        { source: "pubmed", run: () => searchQueryVariants(queries, limit, (searchQuery, perQueryLimit) => this.pubMed.search(searchQuery, perQueryLimit)) },
+        { source: "europe_pmc", run: () => searchQueryVariants(queries, limit, (searchQuery, perQueryLimit) => this.europePmc.search(searchQuery, perQueryLimit)) },
+        { source: "cochrane_crossref", run: () => searchQueryVariants(looseQueries, limit, (searchQuery, perQueryLimit) => this.crossref.search(searchQuery, perQueryLimit, true)) }
       );
     }
     if (category === "education") {
-      jobs.unshift({ source: "eric", run: () => this.eric.search(query, limit) });
+      jobs.unshift({ source: "eric", run: () => searchQueryVariants(queries, limit, (searchQuery, perQueryLimit) => this.eric.search(searchQuery, perQueryLimit)) });
     }
     if (["health", "nutrition", "childcare"].includes(category)) {
-      jobs.push({ source: "myhealthfinder", run: () => this.myHealthfinder.search(looseQuery, Math.min(limit, 3)) });
-      jobs.push({ source: "who_gho", run: () => this.whoGho.search(looseQuery, Math.min(limit, 3)) });
-      jobs.push({ source: "cdc", run: () => this.cdc.search(looseQuery, Math.min(limit, 3)) });
+      jobs.push({ source: "myhealthfinder", run: () => this.myHealthfinder.search(looseQueries[0] ?? originalQuestion, Math.min(limit, 3)) });
+      jobs.push({ source: "who_gho", run: () => this.whoGho.search(looseQueries[0] ?? originalQuestion, Math.min(limit, 3)) });
+      jobs.push({ source: "cdc", run: () => this.cdc.search(looseQueries[0] ?? originalQuestion, Math.min(limit, 3)) });
     }
     if (this.core.enabled) {
-      jobs.push({ source: "core", run: () => this.core.search(looseQuery, limit) });
+      jobs.push({ source: "core", run: () => searchQueryVariants(looseQueries, limit, (searchQuery, perQueryLimit) => this.core.search(searchQuery, perQueryLimit)) });
     }
     if (["education", "psychology", "exercise", "nutrition"].includes(category)) {
-      jobs.push({ source: "arxiv", run: () => this.arxiv.search(looseQuery, Math.min(limit, 3)) });
+      jobs.push({ source: "arxiv", run: () => this.arxiv.search(looseQueries[0] ?? originalQuestion, Math.min(limit, 3)) });
     }
     if (category === "psychology") {
-      jobs.push({ source: "psyarxiv", run: () => this.osfPreprints.searchPsyArxiv(looseQuery, Math.min(limit, 3)) });
+      jobs.push({ source: "psyarxiv", run: () => this.osfPreprints.searchPsyArxiv(looseQueries[0] ?? originalQuestion, Math.min(limit, 3)) });
     }
     if (category === "health") {
       jobs.push(
-        { source: "biorxiv", run: async () => filterPapersByQuery(await this.biorxiv.recent(Math.min(limit, 3)), query) },
-        { source: "medrxiv", run: async () => filterPapersByQuery(await this.medrxiv.recent(Math.min(limit, 3)), query) }
+        { source: "biorxiv", run: async () => filterPapersByQuery(await this.biorxiv.recent(Math.min(limit, 3)), queries.join(" ")) },
+        { source: "medrxiv", run: async () => filterPapersByQuery(await this.medrxiv.recent(Math.min(limit, 3)), queries.join(" ")) }
       );
     }
     if (this.kci.enabled) {
@@ -815,7 +822,7 @@ async function searchKoreanSources(
   search: (query: string) => Promise<Paper[]>
 ): Promise<Paper[]> {
   const queries = koreanQueries.length > 0 ? koreanQueries : [originalQuestion];
-  const results = await Promise.allSettled(queries.slice(0, 5).map((query) => search(query)));
+  const results = await Promise.allSettled(queries.slice(0, 8).map((query) => search(query)));
   const papers = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   if (papers.length > 0) return papers.slice(0, Math.max(limit, 10) * 2);
   const errors = results
@@ -823,6 +830,47 @@ async function searchKoreanSources(
     .map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)));
   if (errors.length > 0) throw new Error(errors.join("; "));
   return [];
+}
+
+async function searchQueryVariants(
+  queries: string[],
+  totalLimit: number,
+  search: (query: string, limit: number) => Promise<Paper[]>
+): Promise<Paper[]> {
+  const uniqueQueries = [...new Set(queries.map((query) => query.trim()).filter(Boolean))].slice(0, 4);
+  if (uniqueQueries.length === 0) return [];
+  const perQueryLimit = Math.max(3, Math.ceil(totalLimit / uniqueQueries.length));
+  const papers: Paper[] = [];
+  const errors: string[] = [];
+
+  for (const [index, query] of uniqueQueries.entries()) {
+    if (index > 0) await delay(350);
+    try {
+      papers.push(...(await search(query, perQueryLimit)));
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (papers.length > 0) return dedupePapers(papers).slice(0, Math.max(totalLimit, 10) * 2);
+  if (errors.length > 0) throw new Error(errors.join("; "));
+  return [];
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function dedupePapers(papers: Paper[]): Paper[] {
+  const seen = new Set<string>();
+  const deduped: Paper[] = [];
+  for (const paper of papers) {
+    const key = `${paper.doi ?? ""}|${paper.sourceId}|${paper.title}`.toLowerCase().replace(/\s+/g, " ").trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(paper);
+  }
+  return deduped;
 }
 
 

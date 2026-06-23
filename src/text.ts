@@ -88,6 +88,15 @@ export function buildKoreanSearchQueries(question: string, category: Exclude<Cat
     }
   }
 
+  if (category === "health") {
+    if (/(비만|체중|감량|살)/.test(q)) {
+      ["비만", "체중 감량", "비만 치료"].forEach((term) => queries.add(term));
+    }
+    if (/(음식|식품|먹|식단|나쁜|안.?좋|피하|원인|위험|가공|패스트|탄산|설탕|당류)/.test(q)) {
+      ["비만 식습관", "가공식품", "당류 음료", "패스트푸드"].forEach((term) => queries.add(term));
+    }
+  }
+
   if (category === "exercise") {
     if (/(근성장|근비대|근육|헬스|저항운동)/.test(q)) {
       ["저항운동", "근비대", "근육량"].forEach((term) => queries.add(term));
@@ -109,7 +118,7 @@ export function buildKoreanSearchQueries(question: string, category: Exclude<Cat
   const compactQuestion = question.replace(/[?!.,;:，。！？'"`“”‘’()[\]{}<>]/g, " ").replace(/\s+/g, " ").trim();
   if (compactQuestion.length >= 2 && compactQuestion.length <= 20) queries.add(compactQuestion);
 
-  return [...queries].slice(0, 5);
+  return [...queries].slice(0, 8);
 }
 
 export function buildSearchQuery(terms: string[], category: Exclude<Category, "auto">): string {
@@ -126,6 +135,21 @@ export function buildLooseSearchQuery(terms: string[], category: Exclude<Categor
     .filter((term) => !defaults.has(term.toLowerCase()))
     .slice(0, 8);
   return (picked.length > 0 ? picked : terms.slice(0, 8)).join(" ");
+}
+
+export function buildFocusedSearchQueries(question: string, terms: string[], category: Exclude<Category, "auto">): string[] {
+  const categoryFilter = categorySearchFilters[category];
+  const queries = new Set<string>([buildSearchQuery(terms, category)]);
+  for (const variant of intentSearchQueries(question, category)) {
+    queries.add([variant, categoryFilter].filter(Boolean).join(" AND "));
+  }
+  return [...queries].slice(0, 4);
+}
+
+export function buildLooseSearchQueries(question: string, terms: string[], category: Exclude<Category, "auto">): string[] {
+  const queries = new Set<string>([buildLooseSearchQuery(terms, category)]);
+  for (const variant of intentSearchQueries(question, category)) queries.add(variant);
+  return [...queries].slice(0, 5);
 }
 
 function formatSearchTerm(term: string): string {
@@ -196,6 +220,7 @@ const keywordMap: Array<[RegExp, string[]]> = [
   [/(공복|빈속)/, ["fasted exercise", "fasted cardio"]],
   [/(유산소|러닝|달리기)/, ["aerobic exercise"]],
   [/(살|체중|다이어트|감량|비만)/, ["weight loss", "body weight"]],
+  [/(비만|살|체중).*(음식|식품|먹|식단|나쁜|안.?좋|피하|원인|위험)|((음식|식품|식단|가공|패스트|탄산|설탕|당류).*(비만|살|체중))/, ["obesity dietary risk factors", "ultra-processed foods obesity", "sugar-sweetened beverages obesity", "fast food obesity", "energy-dense foods weight gain", "dietary patterns obesity"]],
   [/(단백질)/, ["protein intake", "dietary protein"]],
   [/(단백질.*(파우더|보충제)|프로틴|웨이|whey|protein powder|protein supplement)/, ["whey protein supplementation", "protein powder", "protein supplement", "protein supplementation resistance training meta-analysis"]],
   [/(100g|100 g|그램|g이상|g 이상)/, ["protein dose", "grams per kilogram per day", "dose response protein intake"]],
@@ -227,3 +252,32 @@ const keywordMap: Array<[RegExp, string[]]> = [
   [/(철분)/, ["iron deficiency"]],
   [/(칼슘)/, ["calcium"]]
 ];
+
+function intentSearchQueries(question: string, category: Exclude<Category, "auto">): string[] {
+  const q = normalizeQuestion(question);
+  const variants: string[] = [];
+
+  if (/(비만|살|체중|obesity|weight)/i.test(q) && /(음식|식품|먹|식단|나쁜|안.?좋|피하|원인|위험|food|diet)/i.test(q)) {
+    variants.push(
+      "\"ultra-processed foods\" obesity",
+      "\"sugar-sweetened beverages\" obesity",
+      "\"fast food\" obesity",
+      "\"energy-dense foods\" \"weight gain\"",
+      "\"dietary patterns\" obesity"
+    );
+  }
+
+  if (category === "nutrition" && /(당|설탕|탄산|음료|sweetened|beverage)/i.test(q)) {
+    variants.push("\"sugar-sweetened beverages\" \"weight gain\"", "\"added sugar\" obesity");
+  }
+
+  if (/(단백질|프로틴|whey|protein)/i.test(q) && /(신장|콩팥|renal|kidney)/i.test(q)) {
+    variants.push("\"high protein diet\" \"kidney function\"", "\"protein intake\" \"renal function\" \"healthy adults\"");
+  }
+
+  if (/(눈.?마주|눈맞춤|시선|eye.?contact)/i.test(q) && /(아기|아이|영아|유아|infant|toddler|autism|자폐)/i.test(q)) {
+    variants.push("\"eye contact\" infant autism", "\"joint attention\" infant autism", "\"social communication\" toddler autism");
+  }
+
+  return variants;
+}
