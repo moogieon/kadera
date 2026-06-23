@@ -26,6 +26,10 @@ interface SemanticScholarPaper {
 export class SemanticScholarClient {
   constructor(private readonly config: Config, private readonly fetchFn: typeof fetch = fetch) {}
 
+  get enabled(): boolean {
+    return Boolean(this.config.semanticScholarApiKey);
+  }
+
   async search(query: string, limit: number, category?: Exclude<Category, "auto">): Promise<Paper[]> {
     if (this.config.semanticScholarApiKey) {
       const recent = await this.searchRecentByYear(query, limit, category);

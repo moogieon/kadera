@@ -213,11 +213,11 @@ export class ClaimCheckerService {
         source: "semantic_scholar",
         priority: 1,
         implemented: true,
-        enabled: true,
+        enabled: this.semanticScholar.enabled,
         requiresKey: false,
         keyEnv: "SEMANTIC_SCHOLAR_API_KEY",
         url: "https://api.semanticscholar.org/api-docs/graph",
-        note: "키 없이 가능하지만 live smoke에서 429가 발생했으므로 배포 전 키 권장."
+        note: "키 없이 가능하지만 429가 자주 발생해 현재는 키가 있을 때만 검색 job에 포함."
       },
       {
         source: "openalex",
@@ -390,10 +390,12 @@ export class ClaimCheckerService {
     limit: number
   ): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
     const jobs: Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> = [
-      { source: "semantic_scholar", run: () => this.semanticScholar.search(looseQuery, limit, category) },
       { source: "openalex", run: () => this.openAlex.search(looseQuery, limit) },
       { source: "crossref", run: () => this.crossref.search(looseQuery, limit) }
     ];
+    if (this.semanticScholar.enabled) {
+      jobs.unshift({ source: "semantic_scholar", run: () => this.semanticScholar.search(looseQuery, limit, category) });
+    }
 
     if (["health", "childcare", "nutrition", "exercise", "psychology"].includes(category)) {
       jobs.unshift(

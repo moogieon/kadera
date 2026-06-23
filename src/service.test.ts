@@ -195,7 +195,7 @@ describe("ClaimCheckerService", () => {
     expect(first.answer_ko).toContain("적용 한계");
     expect(first.practical_checks?.length).toBeGreaterThan(0);
     expect(second.cached).toBe(true);
-    expect(calls).toBe(8);
+    expect(calls).toBe(7);
     service.close();
   });
 
