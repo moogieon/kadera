@@ -104,6 +104,31 @@ describe("text pipeline", () => {
     );
   });
 
+  it("keeps creatine supplement questions on creatine-specific evidence", () => {
+    const question = "크레아틴 보충제가 신장이나 탈모에 안 좋아?";
+    const terms = buildQueryTerms(question, "nutrition");
+
+    expect(terms).toEqual(
+      expect.arrayContaining(["creatine supplementation", "creatine renal function", "creatine hair loss"])
+    );
+    expect(buildFocusedSearchQueries(question, terms, "nutrition")).toEqual(
+      expect.arrayContaining([expect.stringContaining("creatine monohydrate"), expect.stringContaining("hair loss")])
+    );
+    expect(buildKoreanSearchQueries(question, "nutrition")).toEqual(expect.arrayContaining(["크레아틴", "크레아틴 보충제"]));
+  });
+
+  it("builds direct queries for common off-axis health questions", () => {
+    expect(buildQueryTerms("간헐적 단식은 체중 감량에 실제로 효과 있어?", "nutrition")).toEqual(
+      expect.arrayContaining(["intermittent fasting weight loss", "time-restricted eating weight loss"])
+    );
+    expect(buildFocusedSearchQueries("비타민 D를 먹으면 감기 예방에 도움이 돼?", buildQueryTerms("비타민 D를 먹으면 감기 예방에 도움이 돼?", "health"), "health")).toEqual(
+      expect.arrayContaining([expect.stringContaining("vitamin D")])
+    );
+    expect(buildQueryTerms("커피를 많이 마시면 혈압이 올라가?", "health")).toEqual(
+      expect.arrayContaining(["coffee blood pressure", "coffee hypertension"])
+    );
+  });
+
   it("maps infant eye contact concerns to developmental evidence terms", () => {
     expect(classifyCategory("12개월 아이가 눈 마주침이 잘 안되는데 문제가 있을까?", "auto")).toBe("childcare");
     expect(classifyCategory("12개월 아이가 눈 마주침이 잘 안되는데 문제가 있을까?", "nutrition")).toBe("childcare");
@@ -155,6 +180,52 @@ describe("evidence ranking", () => {
     const ranked = rankPapers(papers, ["eye contact", "joint attention", "눈맞춤", "공동주의", "발달선별검사"]);
 
     expect(ranked.map((paper) => paper.sourceId)).toEqual(expect.arrayContaining(["kci-1", "kci-2"]));
+  });
+
+  it("uses topic anchors to prevent adjacent-topic papers from outranking direct matches", () => {
+    const papers = [
+      testPaper("vitamin-c", "The Long History of Vitamin C: From Prevention of the Common Cold to Treatment"),
+      testPaper("vitamin-d-1", "Vitamin D supplementation to prevent acute respiratory tract infections: systematic review and meta-analysis"),
+      testPaper("vitamin-d-2", "Cholecalciferol and respiratory infection risk in adults"),
+      testPaper("vitamin-d-3", "Vitamin D and the common cold: randomized trial")
+    ];
+
+    const ranked = rankPapers(papers, ["vitamin D", "vitamin D common cold", "cholecalciferol respiratory infection"]);
+
+    expect(ranked.map((paper) => paper.sourceId).slice(0, 3)).toEqual(
+      expect.arrayContaining(["vitamin-d-1", "vitamin-d-2", "vitamin-d-3"])
+    );
+    expect(ranked.map((paper) => paper.sourceId)).not.toContain("vitamin-c");
+  });
+
+  it("requires both sides of a multi-concept intent when ranking", () => {
+    const sleepRanked = rankPapers(
+      [
+        testPaper("sugar", "Sugar-sweetened beverages as risk factor of central obesity"),
+        testPaper("gaming", "Sleep deprivation and problematic gaming among college students"),
+        testPaper("sleep-weight-1", "Sleep Deprivation: Effects on Weight Loss and Weight Loss Maintenance"),
+        testPaper("sleep-weight-2", "Short sleep duration and obesity risk in adults")
+      ],
+      ["short sleep duration obesity", "sleep deprivation weight gain", "sleep duration body weight"]
+    );
+
+    expect(sleepRanked.map((paper) => paper.sourceId).slice(0, 2)).toEqual(
+      expect.arrayContaining(["sleep-weight-1", "sleep-weight-2"])
+    );
+    expect(sleepRanked.map((paper) => paper.sourceId)).not.toContain("sugar");
+    expect(sleepRanked.map((paper) => paper.sourceId)).not.toContain("gaming");
+
+    const coffeeRanked = rankPapers(
+      [
+        testPaper("energy", "The Effects of Energy Drinks on the Cardiovascular System: A Systematic Review"),
+        testPaper("coffee-1", "Coffee consumption and blood pressure: systematic review"),
+        testPaper("coffee-2", "Coffee intake and hypertension risk in adults")
+      ],
+      ["coffee blood pressure", "coffee hypertension", "caffeine blood pressure"]
+    );
+
+    expect(coffeeRanked.map((paper) => paper.sourceId)).toEqual(expect.arrayContaining(["coffee-1", "coffee-2"]));
+    expect(coffeeRanked.map((paper) => paper.sourceId)).not.toContain("energy");
   });
 });
 
@@ -211,6 +282,7 @@ describe("ClaimCheckerService", () => {
     });
 
     const first = await service.checkClaim({ question: "공복 유산소가 살 더 빠져?" });
+    const callsAfterFirst = calls;
     const second = await service.checkClaim({ question: "공복 유산소가 살 더 빠져?" });
 
     expect(first.verdict).toBe("insufficient_evidence");
@@ -227,7 +299,8 @@ describe("ClaimCheckerService", () => {
     expect(first.answer_ko).toContain("적용 한계");
     expect(first.practical_checks?.length).toBeGreaterThan(0);
     expect(second.cached).toBe(true);
-    expect(calls).toBe(7);
+    expect(callsAfterFirst).toBeGreaterThan(0);
+    expect(calls).toBe(callsAfterFirst);
     service.close();
   });
 

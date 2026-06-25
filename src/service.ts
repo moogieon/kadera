@@ -64,24 +64,26 @@ export class ClaimCheckerService {
   private readonly gemini: GeminiRagClient;
 
   constructor(private readonly config: Config, fetchFn: typeof fetch = fetch) {
+    const sourceFetchFn = withFetchTimeout(fetchFn, config.fetchTimeoutMs, "source fetch");
+    const geminiFetchFn = withFetchTimeout(fetchFn, config.geminiFetchTimeoutMs, "Gemini fetch");
     this.cache = new ClaimCache(config.databasePath);
-    this.pubMed = new PubMedClient(config, fetchFn);
-    this.semanticScholar = new SemanticScholarClient(config, fetchFn);
-    this.openAlex = new OpenAlexClient(config, fetchFn);
-    this.europePmc = new EuropePmcClient(fetchFn);
-    this.crossref = new CrossrefClient(config, fetchFn);
-    this.eric = new EricClient(fetchFn);
-    this.arxiv = new ArxivClient(fetchFn);
-    this.myHealthfinder = new MyHealthfinderClient(fetchFn);
-    this.core = new CoreClient(config, fetchFn);
-    this.biorxiv = new PreprintClient("biorxiv", fetchFn);
-    this.medrxiv = new PreprintClient("medrxiv", fetchFn);
-    this.whoGho = new WhoGhoClient(fetchFn);
-    this.cdc = new CdcClient(fetchFn);
-    this.kci = new KciClient(config, fetchFn);
-    this.riss = new RissClient(config, fetchFn);
-    this.osfPreprints = new OsfPreprintsClient(fetchFn);
-    this.gemini = new GeminiRagClient(config, fetchFn);
+    this.pubMed = new PubMedClient(config, sourceFetchFn);
+    this.semanticScholar = new SemanticScholarClient(config, sourceFetchFn);
+    this.openAlex = new OpenAlexClient(config, sourceFetchFn);
+    this.europePmc = new EuropePmcClient(sourceFetchFn);
+    this.crossref = new CrossrefClient(config, sourceFetchFn);
+    this.eric = new EricClient(sourceFetchFn);
+    this.arxiv = new ArxivClient(sourceFetchFn);
+    this.myHealthfinder = new MyHealthfinderClient(sourceFetchFn);
+    this.core = new CoreClient(config, sourceFetchFn);
+    this.biorxiv = new PreprintClient("biorxiv", sourceFetchFn);
+    this.medrxiv = new PreprintClient("medrxiv", sourceFetchFn);
+    this.whoGho = new WhoGhoClient(sourceFetchFn);
+    this.cdc = new CdcClient(sourceFetchFn);
+    this.kci = new KciClient(config, sourceFetchFn);
+    this.riss = new RissClient(config, sourceFetchFn);
+    this.osfPreprints = new OsfPreprintsClient(sourceFetchFn);
+    this.gemini = new GeminiRagClient(config, geminiFetchFn);
   }
 
   async checkClaim(input: CheckClaimInput): Promise<ClaimAnswer> {
@@ -160,7 +162,7 @@ export class ClaimCheckerService {
     return {
       category,
       queryTerms,
-      papers: ensureKoreanCoverage(rankedPapers, papers, selectedLimit),
+      papers: ensureKoreanCoverage(rankedPapers, papers, [...queryTerms, ...koreanQueries], selectedLimit),
       sourceErrors,
       sourceTraces
     };
@@ -801,18 +803,56 @@ const queryStopwords = new Set([
   "mental"
 ]);
 
-function ensureKoreanCoverage(rankedPapers: Paper[], allPapers: Paper[], selectedLimit: number): Paper[] {
+function ensureKoreanCoverage(rankedPapers: Paper[], allPapers: Paper[], relevanceTerms: string[], selectedLimit: number): Paper[] {
   const selected = rankedPapers.slice(0, selectedLimit);
   if (selected.some((paper) => paper.source === "kci" || paper.source === "riss")) return selected;
 
   const koreanPaper =
-    rankedPapers.find((paper) => paper.source === "kci" || paper.source === "riss") ??
-    allPapers.find((paper) => paper.source === "kci" || paper.source === "riss");
+    rankedPapers.find((paper) => isRelevantKoreanPaper(paper, relevanceTerms)) ??
+    allPapers.find((paper) => isRelevantKoreanPaper(paper, relevanceTerms));
   if (!koreanPaper) return selected;
 
   const head = selected.slice(0, 4);
   const tail = selected.slice(4).filter((paper) => paper.sourceId !== koreanPaper.sourceId);
   return [...head, koreanPaper, ...tail].slice(0, selectedLimit);
+}
+
+function isRelevantKoreanPaper(paper: Paper, relevanceTerms: string[]): boolean {
+  if (paper.source !== "kci" && paper.source !== "riss") return false;
+  const haystack = `${paper.title} ${paper.abstract ?? ""} ${paper.publicationTypes.join(" ")}`.toLowerCase();
+  const complexMatch = matchesComplexKoreanIntent(haystack, relevanceTerms);
+  if (complexMatch !== undefined) return complexMatch;
+  const tokens = relevanceTerms.flatMap((term) => term.toLowerCase().split(/[^a-z0-9가-힣]+/)).filter((token) => token.length >= 3);
+  return tokens.some((token) => haystack.includes(token));
+}
+
+function matchesComplexKoreanIntent(haystack: string, relevanceTerms: string[]): boolean | undefined {
+  const joined = relevanceTerms.join(" ").toLowerCase();
+  if (/creatine|크레아틴/.test(joined)) {
+    return /(creatine|크레아틴)/.test(haystack);
+  }
+  if (/intermittent fasting|time-restricted eating|간헐적 단식|시간제한 식사/.test(joined) && /weight|body weight|체중|감량|비만/.test(joined)) {
+    return /(intermittent fasting|time[- ]restricted eating|간헐적|단식|시간제한)/.test(haystack) && /(weight|body weight|weight loss|obesity|체중|감량|비만)/.test(haystack);
+  }
+  if (/sleep deprivation|sleep duration|short sleep|수면/.test(joined) && /weight|body weight|obesity|체중|비만/.test(joined)) {
+    return /(sleep|수면|잠)/.test(haystack) && /(weight|body weight|weight gain|obesity|bmi|체중|비만|살)/.test(haystack);
+  }
+  if (/vitamin d|cholecalciferol|비타민 d|비타민d/.test(joined) && /respiratory|common cold|infection|감기|호흡기/.test(joined)) {
+    return /(vitamin d|cholecalciferol|비타민\s?d)/.test(haystack) && /(respiratory|cold|infection|감기|호흡기|상기도)/.test(haystack);
+  }
+  if (/coffee|커피/.test(joined) && /blood pressure|hypertension|혈압|고혈압/.test(joined)) {
+    return /(coffee|커피)/.test(haystack) && /(blood pressure|hypertension|혈압|고혈압)/.test(haystack);
+  }
+  if (/sweetener|aspartame|sucralose|diet soda|sugar-sweetened|감미료|제로 음료|제로/.test(joined)) {
+    return /(sweetener|aspartame|sucralose|acesulfame|stevia|erythritol|diet soda|sugar[- ]sweetened|감미료|아스파탐|수크랄로스|스테비아|제로)/.test(haystack);
+  }
+  if (/protein|whey|단백질/.test(joined) && /kidney|renal|신장|콩팥/.test(joined)) {
+    return /(protein|whey|단백질|고단백)/.test(haystack) && /(kidney|renal|신장|콩팥)/.test(haystack);
+  }
+  if (/fasted|fasting|공복/.test(joined) && /cardio|aerobic|유산소/.test(joined)) {
+    return /(fasted|fasting|공복)/.test(haystack) && /(cardio|aerobic|exercise|유산소|운동)/.test(haystack);
+  }
+  return undefined;
 }
 
 async function searchKoreanSources(
@@ -859,6 +899,25 @@ async function searchQueryVariants(
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withFetchTimeout(fetchFn: typeof fetch, timeoutMs: number, label: string): typeof fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const upstreamSignal = init?.signal;
+    if (upstreamSignal?.aborted) controller.abort();
+    upstreamSignal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+    try {
+      return await fetchFn(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error(`${label} timed out after ${timeoutMs}ms`);
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
 }
 
 function dedupePapers(papers: Paper[]): Paper[] {
