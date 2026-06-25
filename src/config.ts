@@ -12,6 +12,11 @@ export interface Config {
   geminiModel: string;
   fetchTimeoutMs: number;
   geminiFetchTimeoutMs: number;
+  allowSkipCache: boolean;
+  exposePopularClaims: boolean;
+  maxQuestionLength: number;
+  rateLimitWindowMs: number;
+  rateLimitMaxRequests: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -28,7 +33,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     geminiApiKey: emptyToUndefined(env.GEMINI_API_KEY),
     geminiModel: emptyToUndefined(env.GEMINI_MODEL) ?? "gemini-3.1-flash-lite",
     fetchTimeoutMs: Number(env.FETCH_TIMEOUT_MS ?? 8000),
-    geminiFetchTimeoutMs: Number(env.GEMINI_FETCH_TIMEOUT_MS ?? 30000)
+    geminiFetchTimeoutMs: Number(env.GEMINI_FETCH_TIMEOUT_MS ?? 30000),
+    allowSkipCache: env.ALLOW_SKIP_CACHE === "true",
+    exposePopularClaims: env.EXPOSE_POPULAR_CLAIMS === "true",
+    maxQuestionLength: Number(env.MAX_QUESTION_LENGTH ?? 500),
+    rateLimitWindowMs: Number(env.RATE_LIMIT_WINDOW_MS ?? 60_000),
+    rateLimitMaxRequests: Number(env.RATE_LIMIT_MAX_REQUESTS ?? 30)
   };
 }
 

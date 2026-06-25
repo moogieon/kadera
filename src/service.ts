@@ -203,6 +203,7 @@ export class ClaimCheckerService {
   }
 
   popularClaims(category: string | undefined, limit = 20): PopularClaim[] {
+    if (!this.config.exposePopularClaims) return [];
     return this.cache.popular(category, Math.max(1, Math.min(limit, 50)));
   }
 
@@ -381,7 +382,14 @@ export class ClaimCheckerService {
         fallback: "rule_based_evidence_synthesis"
       },
       cache: {
-        databasePath: this.config.databasePath
+        enabled: true
+      },
+      security: {
+        allowSkipCache: this.config.allowSkipCache,
+        exposePopularClaims: this.config.exposePopularClaims,
+        maxQuestionLength: this.config.maxQuestionLength,
+        rateLimitWindowMs: this.config.rateLimitWindowMs,
+        rateLimitMaxRequests: this.config.rateLimitMaxRequests
       }
     };
   }

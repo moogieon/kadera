@@ -9,8 +9,17 @@ import type { Category } from "./types.js";
 const config = loadConfig();
 const service = new ClaimCheckerService(config);
 const app = createMcpExpressApp();
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
-app.use(express.json({ limit: "1mb" }));
+app.disable("x-powered-by");
+app.use(express.json({ limit: "64kb" }));
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  next();
+});
+app.use(rateLimit);
 app.use(express.static("public"));
 
 app.get("/healthz", (_req, res) => {
@@ -119,16 +128,37 @@ function normalizeClaimRequest(body: unknown): { question: string; category?: Ca
   const input = body as { question?: unknown; category?: unknown; limit?: unknown; skipCache?: unknown };
   const question = typeof input.question === "string" ? input.question.trim() : "";
   if (question.length < 2) throw new Error("question must be at least 2 characters.");
+  if (question.length > config.maxQuestionLength) throw new Error(`question must be at most ${config.maxQuestionLength} characters.`);
   const category = typeof input.category === "string" ? input.category : "auto";
   const limit = Number(input.limit ?? 5);
   return {
     question,
     category: category as Category,
     limit: Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 10)) : 5,
-    skipCache: input.skipCache === true
+    skipCache: config.allowSkipCache && input.skipCache === true
   };
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  const now = Date.now();
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const bucket = rateBuckets.get(ip);
+  if (!bucket || bucket.resetAt <= now) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + config.rateLimitWindowMs });
+    next();
+    return;
+  }
+
+  bucket.count += 1;
+  if (bucket.count > config.rateLimitMaxRequests) {
+    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfter));
+    res.status(429).json({ error: "Too many requests. Please retry later." });
+    return;
+  }
+  next();
 }

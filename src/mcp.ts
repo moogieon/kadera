@@ -15,9 +15,9 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
     {
       title: "카더라 검증",
       description:
-        "한국어 생활 건강/육아/운동/영양/교육/심리 질문을 실제 연구 문헌 검색 결과에 근거해 검증합니다. 없는 논문은 인용하지 않습니다.",
+        "읽기 전용 도구입니다. 한국어 생활 건강/육아/운동/영양/교육/심리 질문을 실제 연구 문헌 검색 결과에 근거해 검증합니다. 없는 논문은 인용하지 않으며 계정/비밀번호/개인정보를 변경하지 않습니다.",
       inputSchema: {
-        question: z.string().min(2).describe("검증할 한국어 질문 또는 주장"),
+        question: z.string().min(2).max(500).describe("검증할 한국어 질문 또는 주장. 개인정보, 계정정보, 비밀번호는 넣지 마세요."),
         category: z.enum(categories).optional().default("auto").describe("분야. 모르면 auto"),
         audience: z.string().optional().default("general").describe("답변 대상. 기본값 general"),
         limit: z.number().int().min(1).max(10).optional().default(5).describe("소스별 검색 개수")
@@ -38,7 +38,7 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
       title: "근거 논문 검색",
       description: "답변 생성 없이 PubMed와 Semantic Scholar에서 관련 연구 메타데이터를 검색합니다.",
       inputSchema: {
-        question: z.string().min(2).describe("검색할 한국어 질문 또는 주장"),
+        question: z.string().min(2).max(500).describe("검색할 한국어 질문 또는 주장. 개인정보, 계정정보, 비밀번호는 넣지 마세요."),
         category: z.enum(categories).optional().default("auto").describe("분야. 모르면 auto"),
         limit: z.number().int().min(1).max(10).optional().default(5).describe("소스별 검색 개수")
       }

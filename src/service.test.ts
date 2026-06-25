@@ -242,6 +242,25 @@ describe("ClaimCheckerService", () => {
     service.close();
   });
 
+  it("does not expose local runtime paths or popular user questions by default", () => {
+    const service = newService(async () => jsonResponse({}));
+
+    const status = service.runtimeStatus();
+
+    expect(JSON.stringify(status)).not.toContain("DATABASE_PATH");
+    expect(JSON.stringify(status)).not.toContain("test.sqlite");
+    expect(status).toMatchObject({
+      cache: { enabled: true },
+      security: {
+        allowSkipCache: false,
+        exposePopularClaims: false,
+        maxQuestionLength: 500
+      }
+    });
+    expect(service.popularClaims(undefined, 10)).toEqual([]);
+    service.close();
+  });
+
   it("uses only fetched papers as citations and caches repeat questions", async () => {
     let calls = 0;
     const service = newService(async (input) => {
