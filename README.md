@@ -10,7 +10,7 @@
 - `find_evidence`: 답변 생성 없이 PubMed/Semantic Scholar 검색 결과 반환
 - `popular_claims`: 개인정보 없이 익명 집계된 반복 질문 반환
 - `data_sources`: 기획서 4장 API별 구현/활성/키 필요 상태 반환
-- `runtime_status`: Gemini RAG 활성 여부와 캐시 DB 경로 반환
+- `runtime_status`: Gemini RAG 활성 여부와 공개 가능한 보안/캐시 상태 반환
 
 ## 안전 원칙
 
@@ -72,6 +72,7 @@ KCI_API_KEY=
 RISS_API_KEY=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.1-flash-lite
+MCP_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
 ```
 
 `PUBMED_API_KEY`와 `SEMANTIC_SCHOLAR_API_KEY`는 없어도 동작하지만, rate limit 안정성을 위해 배포 환경에서는 설정하는 것이 좋습니다.

@@ -36,7 +36,7 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
     "find_evidence",
     {
       title: "근거 논문 검색",
-      description: "답변 생성 없이 PubMed와 Semantic Scholar에서 관련 연구 메타데이터를 검색합니다.",
+      description: "답변 생성 없이 연결된 연구 데이터베이스에서 관련 연구 메타데이터를 검색합니다.",
       inputSchema: {
         question: z.string().min(2).max(500).describe("검색할 한국어 질문 또는 주장. 개인정보, 계정정보, 비밀번호는 넣지 마세요."),
         category: z.enum(categories).optional().default("auto").describe("분야. 모르면 auto"),
@@ -93,7 +93,7 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
     "runtime_status",
     {
       title: "런타임 상태",
-      description: "Gemini RAG 합성 활성 여부와 캐시 DB 경로 등 런타임 설정을 반환합니다.",
+      description: "Gemini RAG 합성 활성 여부와 공개 가능한 보안/캐시 상태를 반환합니다. 로컬 경로나 비밀값은 반환하지 않습니다.",
       inputSchema: {}
     },
     async () => {

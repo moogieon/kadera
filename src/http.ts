@@ -8,7 +8,10 @@ import type { Category } from "./types.js";
 
 const config = loadConfig();
 const service = new ClaimCheckerService(config);
-const app = createMcpExpressApp();
+const app = createMcpExpressApp({
+  host: "0.0.0.0",
+  allowedHosts: config.mcpAllowedHosts
+});
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 app.disable("x-powered-by");

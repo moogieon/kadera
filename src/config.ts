@@ -17,6 +17,7 @@ export interface Config {
   maxQuestionLength: number;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
+  mcpAllowedHosts: string[];
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -38,11 +39,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     exposePopularClaims: env.EXPOSE_POPULAR_CLAIMS === "true",
     maxQuestionLength: Number(env.MAX_QUESTION_LENGTH ?? 500),
     rateLimitWindowMs: Number(env.RATE_LIMIT_WINDOW_MS ?? 60_000),
-    rateLimitMaxRequests: Number(env.RATE_LIMIT_MAX_REQUESTS ?? 30)
+    rateLimitMaxRequests: Number(env.RATE_LIMIT_MAX_REQUESTS ?? 30),
+    mcpAllowedHosts: parseList(env.MCP_ALLOWED_HOSTS ?? "localhost,127.0.0.1,[::1]")
   };
 }
 
 function emptyToUndefined(value: string | undefined): string | undefined {
   if (!value || value.trim() === "") return undefined;
   return value.trim();
+}
+
+function parseList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
