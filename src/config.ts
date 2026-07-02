@@ -14,6 +14,8 @@ export interface Config {
   geminiFetchTimeoutMs: number;
   allowSkipCache: boolean;
   exposePopularClaims: boolean;
+  exposeDiagnosticApis: boolean;
+  exposeDiagnosticTools: boolean;
   maxQuestionLength: number;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
@@ -37,9 +39,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     geminiFetchTimeoutMs: Number(env.GEMINI_FETCH_TIMEOUT_MS ?? 30000),
     allowSkipCache: env.ALLOW_SKIP_CACHE === "true",
     exposePopularClaims: env.EXPOSE_POPULAR_CLAIMS === "true",
-    maxQuestionLength: Number(env.MAX_QUESTION_LENGTH ?? 500),
+    exposeDiagnosticApis: env.EXPOSE_DIAGNOSTIC_APIS === "true",
+    exposeDiagnosticTools: env.EXPOSE_DIAGNOSTIC_TOOLS === "true",
+    maxQuestionLength: Number(env.MAX_QUESTION_LENGTH ?? 350),
     rateLimitWindowMs: Number(env.RATE_LIMIT_WINDOW_MS ?? 60_000),
-    rateLimitMaxRequests: Number(env.RATE_LIMIT_MAX_REQUESTS ?? 30),
+    rateLimitMaxRequests: Number(env.RATE_LIMIT_MAX_REQUESTS ?? 8),
     mcpAllowedHosts: parseList(env.MCP_ALLOWED_HOSTS ?? "localhost,127.0.0.1,[::1]")
   };
 }

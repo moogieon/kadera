@@ -28,6 +28,17 @@ afterEach(() => {
 });
 
 describe("text pipeline", () => {
+  it("uses public-safe defaults for cost and diagnostic exposure", () => {
+    const config = loadConfig({});
+
+    expect(config.geminiModel).toBe("gemini-2.5-flash-lite");
+    expect(config.maxQuestionLength).toBe(350);
+    expect(config.rateLimitWindowMs).toBe(60_000);
+    expect(config.rateLimitMaxRequests).toBe(8);
+    expect(config.exposeDiagnosticApis).toBe(false);
+    expect(config.exposeDiagnosticTools).toBe(false);
+  });
+
   it("classifies Korean questions into MVP categories", () => {
     expect(classifyCategory("우리 애가 고기를 안 먹는데 괜찮아?", "auto")).toBe("childcare");
     expect(classifyCategory("공복 유산소가 살 더 빠져?", "auto")).toBe("exercise");
@@ -283,7 +294,10 @@ describe("ClaimCheckerService", () => {
       security: {
         allowSkipCache: false,
         exposePopularClaims: false,
-        maxQuestionLength: 500
+        exposeDiagnosticApis: false,
+        exposeDiagnosticTools: false,
+        maxQuestionLength: 350,
+        rateLimitMaxRequests: 8
       }
     });
     expect(service.popularClaims(undefined, 10)).toEqual([]);

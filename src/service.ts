@@ -378,7 +378,7 @@ export class ClaimCheckerService {
       llm: {
         provider: "gemini",
         enabled: this.gemini.enabled,
-        model: this.config.geminiModel,
+        model: this.config.exposeDiagnosticApis || this.config.exposeDiagnosticTools ? this.config.geminiModel : undefined,
         fallback: "rule_based_evidence_synthesis"
       },
       cache: {
@@ -387,11 +387,17 @@ export class ClaimCheckerService {
       security: {
         allowSkipCache: this.config.allowSkipCache,
         exposePopularClaims: this.config.exposePopularClaims,
+        exposeDiagnosticApis: this.config.exposeDiagnosticApis,
+        exposeDiagnosticTools: this.config.exposeDiagnosticTools,
         maxQuestionLength: this.config.maxQuestionLength,
         rateLimitWindowMs: this.config.rateLimitWindowMs,
         rateLimitMaxRequests: this.config.rateLimitMaxRequests
       }
     };
+  }
+
+  diagnosticToolsEnabled(): boolean {
+    return this.config.exposeDiagnosticTools;
   }
 
   close(): void {

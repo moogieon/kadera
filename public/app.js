@@ -68,7 +68,9 @@ async function boot() {
     const enabled = dataSources.sources.filter((source) => source.enabled).length;
     addLog(`데이터소스 ${dataSources.sources.length}개 등록, ${enabled}개 활성`, "ok");
   } catch (error) {
-    addLog(`초기화 실패: ${messageOf(error)}`, "error");
+    runtimeBadge.textContent = "public mode";
+    runtimeBadge.classList.remove("on");
+    addLog("공개 모드: 내부 런타임/데이터소스 진단은 숨겨져 있습니다.", "info");
   }
 }
 
@@ -89,32 +91,14 @@ async function runClaim() {
   try {
     addLog("1단계: 연구 데이터소스에서 근거 수집 시작", "info");
     addLog("2단계: 같은 근거 묶음으로 AI/RAG 답변 합성", "info");
-    const resultBundle = await postJson("/api/research-claim", payload);
-    const evidence = resultBundle.evidence;
-    const result = resultBundle.answer;
-    addLog(`검색어 변환: ${evidence.queryTerms.join(", ")}`, "ok");
-    addLog(`분류된 카테고리: ${evidence.category}`, "ok");
-    if (evidence.sourceTraces?.length) {
-      const totalCandidates = evidence.sourceTraces.reduce((sum, trace) => sum + (trace.paperCount || 0), 0);
-      addLog(`전체 후보 ${totalCandidates}건 중 최종 ${evidence.papers.length}건 선별`, "ok");
-      evidence.sourceTraces.forEach((trace) => {
-        const message =
-          trace.status === "fulfilled"
-            ? `${trace.source} 검색 완료: ${trace.paperCount}건${trace.message ? ` · ${trace.message}` : ""}`
-            : `${trace.source} 검색 실패: ${trace.message}`;
-        addLog(message, trace.status === "fulfilled" ? "ok" : "warn");
-      });
-    }
-    if (!evidence.sourceTraces?.length && evidence.sourceErrors.length > 0) {
-      evidence.sourceErrors.forEach((error) => addLog(`${error.source} 오류: ${error.message}`, "warn"));
-    }
-    addLog(`관련 논문 ${evidence.papers.length}건 선별`, evidence.papers.length ? "ok" : "warn");
-    renderPapers(evidence.papers);
+    const result = await postJson("/api/check-claim", payload);
+    addLog(`인용 ${result.citations.length}건 선별`, result.citations.length ? "ok" : "warn");
+    renderPapers(result.citations);
 
     addLog(`최종 판정: ${result.verdict}, 근거수준: ${result.evidence_level}`, "ok");
     addLog(`인용 ${result.citations.length}건, 캐시=${result.cached ? "hit" : "miss"}`, "ok");
     renderAnswer(result);
-    setRaw({ evidence, answer: result });
+    setRaw({ answer: result });
   } catch (error) {
     addLog(`실패: ${messageOf(error)}`, "error");
     answer.textContent = messageOf(error);
