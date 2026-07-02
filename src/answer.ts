@@ -77,44 +77,103 @@ export function composeAnswer(
 }
 
 export function formatAnswerForText(answer: ClaimAnswer): string {
-  const citations = answer.citations.length
-    ? answer.citations
-        .map((citation, index) => {
-          const authors = citation.authors.slice(0, 3).join(", ");
-          const year = citation.year ? `, ${citation.year}` : "";
-          const venue = citation.venue ? `, ${citation.venue}` : "";
-          const institution = citation.institutions?.length ? `, 기관: ${citation.institutions.slice(0, 2).join(", ")}` : "";
-          const doi = citation.doi ? `, DOI: ${citation.doi}` : "";
-          return `[${index + 1}] ${citation.title}${authors ? ` (${authors}${year}${venue}${institution})` : `${year}${venue}${institution}`}${doi} - ${citation.url}`;
-        })
-        .join("\n")
-    : "출처 없음";
+  const citations = formatVisibleCitations(answer.citations);
+  const practicalChecks = answer.practical_checks?.slice(0, 3).map((item, index) => {
+    return `${index + 1}. ${item.label}: ${item.what_to_try_ko} ${item.what_to_watch_ko}`;
+  });
 
   return [
     answer.answer_ko,
     "",
-    `판정: ${answer.verdict}`,
-    `근거 수준: ${answer.evidence_level}`,
-    `카테고리: ${answer.category}`,
-    `검색어: ${answer.query_terms.join(", ")}`,
-    "",
-    "한계:",
-    ...answer.limitations.map((item) => `- ${item}`),
-    ...(answer.practical_checks?.length
+    `판정: ${verdictLabel(answer.verdict)}`,
+    `근거 수준: ${evidenceLevelLabel(answer.evidence_level)}`,
+    ...(practicalChecks?.length
       ? [
           "",
-          "확인해볼 관찰 포인트:",
-          ...answer.practical_checks.map(
-            (item, index) => `${index + 1}. ${item.label}: ${item.what_to_try_ko} 관찰: ${item.what_to_watch_ko}`
-          )
+          "바로 확인해볼 것:",
+          ...practicalChecks
         ]
       : []),
     "",
-    "출처:",
+    "대표 출처:",
     citations,
     "",
     answer.safety_note
   ].join("\n");
+}
+
+function formatVisibleCitations(citations: Citation[]): string {
+  if (citations.length === 0) return "검색된 대표 출처 없음";
+
+  return citations
+    .slice(0, 3)
+    .map((citation, index) => {
+      const year = citation.year ? `${citation.year}` : "연도 미상";
+      const venue = citation.venue || sourceLabel(citation.source);
+      const institution = citation.institutions?.[0] ? `, ${citation.institutions[0]}` : "";
+      const meta = [year, venue ? `${venue}${institution}` : ""].filter(Boolean).join(", ");
+      const title = truncate(citation.title, 92);
+      return `[${index + 1}] ${title} (${meta})\n${citation.url}`;
+    })
+    .join("\n");
+}
+
+function verdictLabel(verdict: Verdict): string {
+  switch (verdict) {
+    case "supported":
+      return "근거가 대체로 지지";
+    case "mixed":
+      return "근거가 혼재";
+    case "not_supported":
+      return "근거상 단정 어려움/반대 신호";
+    case "insufficient_evidence":
+      return "직접 근거 부족";
+    case "safety_redirect":
+      return "안전 우선 안내";
+  }
+}
+
+function sourceLabel(source: Citation["source"]): string {
+  switch (source) {
+    case "pubmed":
+      return "PubMed";
+    case "semantic_scholar":
+      return "Semantic Scholar";
+    case "openalex":
+      return "OpenAlex";
+    case "europe_pmc":
+      return "Europe PMC";
+    case "core":
+      return "CORE";
+    case "cochrane_crossref":
+      return "Cochrane/Crossref";
+    case "who_gho":
+      return "WHO";
+    case "cdc":
+      return "CDC";
+    case "myhealthfinder":
+      return "MyHealthfinder";
+    case "arxiv":
+      return "arXiv";
+    case "biorxiv":
+      return "bioRxiv";
+    case "medrxiv":
+      return "medRxiv";
+    case "crossref":
+      return "Crossref";
+    case "eric":
+      return "ERIC";
+    case "psyarxiv":
+      return "PsyArXiv";
+    case "kci":
+      return "KCI";
+    case "riss":
+      return "RISS";
+  }
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
 }
 
 function buildPracticalChecks(question: string, category: string): PracticalCheck[] | undefined {
