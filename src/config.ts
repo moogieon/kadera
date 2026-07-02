@@ -32,7 +32,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     kciApiKey: emptyToUndefined(env.KCI_API_KEY),
     rissApiKey: emptyToUndefined(env.RISS_API_KEY),
     geminiApiKey: emptyToUndefined(env.GEMINI_API_KEY),
-    geminiModel: emptyToUndefined(env.GEMINI_MODEL) ?? "gemini-3.1-flash-lite",
+    geminiModel: emptyToUndefined(env.GEMINI_MODEL) ?? "gemini-2.5-flash-lite",
     fetchTimeoutMs: Number(env.FETCH_TIMEOUT_MS ?? 8000),
     geminiFetchTimeoutMs: Number(env.GEMINI_FETCH_TIMEOUT_MS ?? 30000),
     allowSkipCache: env.ALLOW_SKIP_CACHE === "true",

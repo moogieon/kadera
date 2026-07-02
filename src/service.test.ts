@@ -444,7 +444,7 @@ describe("ClaimCheckerService", () => {
 describe("GeminiRagClient", () => {
   it("merges AI synthesis without allowing invented citations", async () => {
     const client = new GeminiRagClient(
-      loadConfig({ GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-3.1-flash-lite" }),
+      loadConfig({ GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-2.5-flash-lite" }),
       async () =>
         jsonResponse({
           candidates: [
