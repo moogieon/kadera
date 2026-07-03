@@ -28,6 +28,17 @@ afterEach(() => {
 });
 
 describe("text pipeline", () => {
+  it("uses public-safe defaults for cost and diagnostic exposure", () => {
+    const config = loadConfig({});
+
+    expect(config.geminiModel).toBe("gemini-2.5-flash-lite");
+    expect(config.maxQuestionLength).toBe(350);
+    expect(config.rateLimitWindowMs).toBe(60_000);
+    expect(config.rateLimitMaxRequests).toBe(8);
+    expect(config.exposeDiagnosticApis).toBe(false);
+    expect(config.exposeDiagnosticTools).toBe(false);
+  });
+
   it("classifies Korean questions into MVP categories", () => {
     expect(classifyCategory("우리 애가 고기를 안 먹는데 괜찮아?", "auto")).toBe("childcare");
     expect(classifyCategory("공복 유산소가 살 더 빠져?", "auto")).toBe("exercise");
@@ -242,6 +253,35 @@ describe("ClaimCheckerService", () => {
     service.close();
   });
 
+  it("redirects account action requests without external search", async () => {
+    const service = newService(async () => {
+      throw new Error("fetch should not be called");
+    });
+
+    const answer = await service.checkClaim({ question: "내 인스타 비밀번호 바꿔줘" });
+
+    expect(answer.verdict).toBe("safety_redirect");
+    expect(answer.citations).toEqual([]);
+    expect(answer.answer_ko).toContain("카더라 말고 안전 기준");
+    expect(answer.answer_ko).toContain("공식 앱이나 웹사이트");
+    service.close();
+  });
+
+  it("rejects non-empirical fantasy subjects without attaching unrelated papers", async () => {
+    const service = newService(async () => {
+      throw new Error("fetch should not be called");
+    });
+
+    const answer = await service.checkClaim({ question: "외계인 발가락이 키 성장에 좋아?" });
+
+    expect(answer.verdict).toBe("insufficient_evidence");
+    expect(answer.citations).toEqual([]);
+    expect(answer.query_terms).toEqual([]);
+    expect(answer.answer_ko).toContain("석박사들도 모른다고카드라");
+    expect(answer.answer_ko).toContain("연구로 검증 가능한 대상");
+    service.close();
+  });
+
   it("does not expose local runtime paths or popular user questions by default", () => {
     const service = newService(async () => jsonResponse({}));
 
@@ -254,7 +294,10 @@ describe("ClaimCheckerService", () => {
       security: {
         allowSkipCache: false,
         exposePopularClaims: false,
-        maxQuestionLength: 500
+        exposeDiagnosticApis: false,
+        exposeDiagnosticTools: false,
+        maxQuestionLength: 350,
+        rateLimitMaxRequests: 8
       }
     });
     expect(service.popularClaims(undefined, 10)).toEqual([]);
@@ -310,6 +353,7 @@ describe("ClaimCheckerService", () => {
     expect(first.evidence_interpretation?.[0]?.stance).toBe("unclear");
     expect(first.citations[0]?.sourceId).toBe("123");
     expect(first.citations[0]?.title).toContain("Fasted aerobic exercise");
+    expect(first.answer_ko).toContain("카더라 말고 근거로 보면");
     expect(first.answer_ko).toContain("대표 연구를 짧게 보면");
     expect(first.answer_ko).toContain("Journal of Exercise Evidence");
     expect(first.answer_ko).toContain("Yonsei University");
@@ -414,7 +458,7 @@ describe("ClaimCheckerService", () => {
 describe("GeminiRagClient", () => {
   it("merges AI synthesis without allowing invented citations", async () => {
     const client = new GeminiRagClient(
-      loadConfig({ GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-3.1-flash-lite" }),
+      loadConfig({ GEMINI_API_KEY: "test-key", GEMINI_MODEL: "gemini-2.5-flash-lite" }),
       async () =>
         jsonResponse({
           candidates: [

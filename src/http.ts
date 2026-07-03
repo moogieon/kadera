@@ -15,6 +15,7 @@ const app = createMcpExpressApp({
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "64kb" }));
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -29,23 +30,25 @@ app.get("/healthz", (_req, res) => {
   res.json({ ok: true, name: "kadera-malgo" });
 });
 
-app.get("/api/runtime-status", (_req, res) => {
-  res.json(service.runtimeStatus());
-});
+if (config.exposeDiagnosticApis) {
+  app.get("/api/runtime-status", (_req, res) => {
+    res.json(service.runtimeStatus());
+  });
 
-app.get("/api/data-sources", (_req, res) => {
-  res.json({ sources: service.dataSources() });
-});
+  app.get("/api/data-sources", (_req, res) => {
+    res.json({ sources: service.dataSources() });
+  });
 
-app.post("/api/find-evidence", async (req, res) => {
-  try {
-    const input = normalizeClaimRequest(req.body);
-    const evidence = await service.findEvidence(input);
-    res.json(evidence);
-  } catch (error) {
-    res.status(400).json({ error: errorMessage(error) });
-  }
-});
+  app.post("/api/find-evidence", async (req, res) => {
+    try {
+      const input = normalizeClaimRequest(req.body);
+      const evidence = await service.findEvidence(input);
+      res.json(evidence);
+    } catch (error) {
+      res.status(400).json({ error: errorMessage(error) });
+    }
+  });
+}
 
 app.post("/api/check-claim", async (req, res) => {
   try {
@@ -57,15 +60,17 @@ app.post("/api/check-claim", async (req, res) => {
   }
 });
 
-app.post("/api/research-claim", async (req, res) => {
-  try {
-    const input = normalizeClaimRequest(req.body);
-    const result = await service.checkClaimWithTrace(input);
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ error: errorMessage(error) });
-  }
-});
+if (config.exposeDiagnosticApis) {
+  app.post("/api/research-claim", async (req, res) => {
+    try {
+      const input = normalizeClaimRequest(req.body);
+      const result = await service.checkClaimWithTrace(input);
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ error: errorMessage(error) });
+    }
+  });
+}
 
 app.post("/mcp", async (req, res) => {
   const server = createKaderaMcpServer(service);

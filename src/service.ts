@@ -18,7 +18,7 @@ import { OsfPreprintsClient } from "./clients/osfPreprints.js";
 import { GeminiRagClient, type SearchPlan } from "./clients/gemini.js";
 import { composeAnswer } from "./answer.js";
 import { rankPapers } from "./evidence.js";
-import { screenSafety, standardSafetyNote } from "./safety.js";
+import { screenSafety, screenUnsupportedResearchQuestion, standardSafetyNote } from "./safety.js";
 import {
   buildFocusedSearchQueries,
   buildKoreanSearchQueries,
@@ -92,17 +92,12 @@ export class ClaimCheckerService {
     const category = classifyCategory(input.question, input.category ?? "auto");
 
     if (safety.redirect) {
-      return {
-        answer_ko: safety.answer ?? "전문가 상담이 필요한 질문입니다.",
-        verdict: "safety_redirect",
-        evidence_level: "unknown",
-        citations: [],
-        limitations: ["응급, 처방, 진단 영역은 연구 검색 답변보다 전문가 상담이 우선입니다."],
-        safety_note: standardSafetyNote,
-        cached: false,
-        category,
-        query_terms: []
-      };
+      return buildSafetyRedirectAnswer(category, safety.answer);
+    }
+
+    const unsupported = screenUnsupportedResearchQuestion(input.question);
+    if (unsupported.unsupported) {
+      return buildUnsupportedResearchAnswer(category, unsupported.answer);
     }
 
     const cached = input.skipCache ? undefined : this.cache.get(normalizedQuestion);
@@ -182,17 +177,22 @@ export class ClaimCheckerService {
       };
       return {
         evidence,
-        answer: {
-          answer_ko: safety.answer ?? "전문가 상담이 필요한 질문입니다.",
-          verdict: "safety_redirect",
-          evidence_level: "unknown",
-          citations: [],
-          limitations: ["응급, 처방, 진단 영역은 연구 검색 답변보다 전문가 상담이 우선입니다."],
-          safety_note: standardSafetyNote,
-          cached: false,
-          category,
-          query_terms: []
-        }
+        answer: buildSafetyRedirectAnswer(category, safety.answer)
+      };
+    }
+
+    const unsupported = screenUnsupportedResearchQuestion(input.question);
+    if (unsupported.unsupported) {
+      const evidence: EvidenceSearchResult = {
+        category,
+        queryTerms: [],
+        papers: [],
+        sourceErrors: [],
+        sourceTraces: []
+      };
+      return {
+        evidence,
+        answer: buildUnsupportedResearchAnswer(category, unsupported.answer)
       };
     }
 
@@ -378,7 +378,7 @@ export class ClaimCheckerService {
       llm: {
         provider: "gemini",
         enabled: this.gemini.enabled,
-        model: this.config.geminiModel,
+        model: this.config.exposeDiagnosticApis || this.config.exposeDiagnosticTools ? this.config.geminiModel : undefined,
         fallback: "rule_based_evidence_synthesis"
       },
       cache: {
@@ -387,11 +387,17 @@ export class ClaimCheckerService {
       security: {
         allowSkipCache: this.config.allowSkipCache,
         exposePopularClaims: this.config.exposePopularClaims,
+        exposeDiagnosticApis: this.config.exposeDiagnosticApis,
+        exposeDiagnosticTools: this.config.exposeDiagnosticTools,
         maxQuestionLength: this.config.maxQuestionLength,
         rateLimitWindowMs: this.config.rateLimitWindowMs,
         rateLimitMaxRequests: this.config.rateLimitMaxRequests
       }
     };
+  }
+
+  diagnosticToolsEnabled(): boolean {
+    return this.config.exposeDiagnosticTools;
   }
 
   close(): void {
@@ -512,12 +518,52 @@ export class ClaimCheckerService {
     if (studyDigest && !/대표 연구를 (뜯어|짧게) 보면/.test(answerKo)) {
       answerKo = `${answerKo}\n\n${studyDigest}`;
     }
+    answerKo = applyBrandVoice(answerKo, answer.verdict);
     if (answerKo === answer.answer_ko) return answer;
     return {
       ...answer,
       answer_ko: answerKo
     };
   }
+}
+
+function buildSafetyRedirectAnswer(category: Exclude<Category, "auto">, answer?: string): ClaimAnswer {
+  return {
+    answer_ko: `카더라 말고 안전 기준으로 보면, 여기서는 검색 답변보다 공식 절차가 먼저입니다.\n\n${answer ?? "전문가 상담이 필요한 질문입니다."}`,
+    verdict: "safety_redirect",
+    evidence_level: "unknown",
+    citations: [],
+    limitations: ["응급, 처방, 진단, 계정 조작처럼 이 도구가 직접 처리하면 안 되는 요청은 검색 답변보다 안전한 공식 절차가 우선입니다."],
+    safety_note: standardSafetyNote,
+    cached: false,
+    category,
+    query_terms: []
+  };
+}
+
+function buildUnsupportedResearchAnswer(category: Exclude<Category, "auto">, answer?: string): ClaimAnswer {
+  return {
+    answer_ko: `카더라 말고 논문 기준으로 보면, 이건 검색 대상부터 다시 잡아야 합니다. 논문에 없으면 석박사들도 모른다고카드라.\n\n${answer ?? "연구로 검증 가능한 대상이 아니라 관련 없는 논문을 붙이지 않고 검색을 중단합니다."}`,
+    verdict: "insufficient_evidence",
+    evidence_level: "unknown",
+    citations: [],
+    limitations: ["현실의 검증 가능한 대상이 아니면 논문 검색 결과를 근거처럼 붙이지 않습니다."],
+    safety_note: standardSafetyNote,
+    cached: false,
+    category,
+    query_terms: []
+  };
+}
+
+function applyBrandVoice(answerKo: string, verdict: ClaimAnswer["verdict"]): string {
+  if (/^\s*(카더라 말고|소문 말고 논문)/.test(answerKo)) return answerKo;
+  if (verdict === "safety_redirect") {
+    return `카더라 말고 안전 기준으로 보면, 여기서는 검색 답변보다 공식 절차가 먼저입니다.\n\n${answerKo}`;
+  }
+  if (verdict === "insufficient_evidence") {
+    return `카더라 말고 근거로 보면, 아직 단정할 만큼 딱 붙는 자료는 약합니다. 논문에 없으면 석박사들도 모른다고카드라.\n\n${answerKo}`;
+  }
+  return `카더라 말고 근거로 보면, 핵심은 이겁니다.\n\n${answerKo}`;
 }
 
 function buildPopulationContext(question: string, category: Exclude<Category, "auto">): string | undefined {

@@ -71,13 +71,19 @@ CONTACT_EMAIL=
 KCI_API_KEY=
 RISS_API_KEY=
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_MODEL=gemini-2.5-flash-lite
+MAX_QUESTION_LENGTH=350
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX_REQUESTS=8
+EXPOSE_DIAGNOSTIC_APIS=false
+EXPOSE_DIAGNOSTIC_TOOLS=false
 MCP_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
 ```
 
 `PUBMED_API_KEY`와 `SEMANTIC_SCHOLAR_API_KEY`는 없어도 동작하지만, rate limit 안정성을 위해 배포 환경에서는 설정하는 것이 좋습니다.
 `CORE_API_KEY`, `KCI_API_KEY`, `RISS_API_KEY`가 없으면 해당 adapter는 비활성입니다.
-`GEMINI_API_KEY`가 있으면 검색된 논문 메타데이터와 초록만 컨텍스트로 넘겨 한국어 RAG 합성 답변을 생성합니다. 기본 모델은 무료 티어가 있는 `gemini-3.1-flash-lite`이며, `GEMINI_MODEL`로 바꿀 수 있습니다. 없거나 실패하면 규칙 기반 근거 해석으로 자동 fallback합니다.
+`GEMINI_API_KEY`가 있으면 검색된 논문 메타데이터와 초록만 컨텍스트로 넘겨 한국어 RAG 합성 답변을 생성합니다. 기본 모델은 저비용 운영용 `gemini-2.5-flash-lite`이며, `GEMINI_MODEL`로 바꿀 수 있습니다. 없거나 실패하면 규칙 기반 근거 해석으로 자동 fallback합니다.
+공개 운영에서는 비용 방어를 위해 기본 rate limit이 `8회/분/IP`, 질문 길이가 `350자`로 제한됩니다. 내부 추적용 `/api/research-claim`, `/api/find-evidence`, `/api/runtime-status`, `/api/data-sources`와 MCP 진단 도구는 각각 `EXPOSE_DIAGNOSTIC_APIS=true`, `EXPOSE_DIAGNOSTIC_TOOLS=true`일 때만 열립니다.
 
 RAG 구조는 다음처럼 동작합니다.
 
