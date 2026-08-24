@@ -15,16 +15,30 @@ export class PubMedClient {
     attributeNamePrefix: "@_",
     textNodeName: "#text"
   });
+  private requestQueue: Promise<void> = Promise.resolve();
+  private nextRequestAt = 0;
 
   constructor(private readonly config: Config, private readonly fetchFn: typeof fetch = fetch) {}
 
-  async search(query: string, limit: number): Promise<Paper[]> {
-    const ids = await this.searchIds(query, limit);
-    if (ids.length === 0) return [];
-    return this.fetchArticles(ids);
+  async search(query: string, limit: number, overallTimeoutMs?: number): Promise<Paper[]> {
+    // Search variants share a rate-limited queue. Bound the *whole* search,
+    // including time spent waiting in that queue, so a timed-out request from
+    // one user cannot keep issuing PubMed calls behind a later user's query.
+    // This is deliberately local to a single fresh search and does not cache
+    // or reuse results.
+    const controller = new AbortController();
+    const timeoutMs = overallTimeoutMs ?? Math.max(12_000, this.config.fetchTimeoutMs + 4_000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const ids = await this.searchIds(query, limit, controller.signal);
+      if (ids.length === 0) return [];
+      return await this.fetchArticles(ids, controller.signal);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  private async searchIds(query: string, limit: number): Promise<string[]> {
+  private async searchIds(query: string, limit: number, signal: AbortSignal): Promise<string[]> {
     const url = new URL("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi");
     url.searchParams.set("db", "pubmed");
     url.searchParams.set("term", query);
@@ -33,20 +47,20 @@ export class PubMedClient {
     url.searchParams.set("sort", "relevance");
     this.addNcbiParams(url);
 
-    const response = await this.fetchFn(url);
+    const response = await this.fetchRateLimited(url, signal);
     if (!response.ok) throw new Error(`PubMed esearch failed: ${response.status}`);
     const json = (await response.json()) as PubMedSearchResponse;
     return json.esearchresult?.idlist ?? [];
   }
 
-  private async fetchArticles(ids: string[]): Promise<Paper[]> {
+  private async fetchArticles(ids: string[], signal: AbortSignal): Promise<Paper[]> {
     const url = new URL("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi");
     url.searchParams.set("db", "pubmed");
     url.searchParams.set("id", ids.join(","));
     url.searchParams.set("retmode", "xml");
     this.addNcbiParams(url);
 
-    const response = await this.fetchFn(url);
+    const response = await this.fetchRateLimited(url, signal);
     if (!response.ok) throw new Error(`PubMed efetch failed: ${response.status}`);
     const xml = await response.text();
     const parsed = this.parser.parse(xml) as PubMedXmlRoot;
@@ -59,6 +73,44 @@ export class PubMedClient {
     if (this.config.pubmedApiKey) url.searchParams.set("api_key", this.config.pubmedApiKey);
     url.searchParams.set("tool", "kadera-malgo");
   }
+
+  private async fetchRateLimited(url: URL, signal: AbortSignal): Promise<Response> {
+    // NCBI permits only three requests per second without an API key. Search
+    // variants are parallel at the service layer, so serialize just this
+    // provider's outbound requests to avoid silently losing a direct paper.
+    const minimumGapMs = this.config.pubmedApiKey ? 110 : 350;
+    if (signal.aborted) throw abortedPubMedSearch();
+    const scheduled = this.requestQueue.then(async () => {
+      if (signal.aborted) throw abortedPubMedSearch();
+      const waitMs = Math.max(0, this.nextRequestAt - Date.now());
+      if (waitMs > 0) await waitForQueueSlot(waitMs, signal);
+      if (signal.aborted) throw abortedPubMedSearch();
+      this.nextRequestAt = Date.now() + minimumGapMs;
+    });
+    this.requestQueue = scheduled.catch(() => undefined);
+    await scheduled;
+    if (signal.aborted) throw abortedPubMedSearch();
+    return this.fetchFn(url, { signal });
+  }
+}
+
+function waitForQueueSlot(waitMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, waitMs);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", onAbort);
+      reject(abortedPubMedSearch());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function abortedPubMedSearch(): Error {
+  return new Error("PubMed search cancelled before completion.");
 }
 
 function parseArticle(article: PubmedArticle): Paper | undefined {
@@ -142,9 +194,20 @@ function readYear(articleNode: ArticleNode | undefined): number | undefined {
 
 function readAbstract(value: unknown): string | undefined {
   const parts = toArray(value)
-    .map((part) => normalizeText(readText(part)))
+    .map((part) => {
+      const text = normalizeText(readText(part));
+      if (!text) return "";
+      const label = readAbstractLabel(part);
+      return label ? `${label}: ${text}` : text;
+    })
     .filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+function readAbstractLabel(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || !("@_Label" in value)) return undefined;
+  const label = (value as { "@_Label"?: unknown })["@_Label"];
+  return typeof label === "string" ? normalizeText(label) || undefined : undefined;
 }
 
 function readText(value: unknown): string | undefined {

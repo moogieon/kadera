@@ -12,10 +12,12 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev:http": "tsx src/http.ts",
-    "dev:stdio": "tsx src/stdio.ts",
-    "start": "node dist/http.js",
-    "start:stdio": "node dist/stdio.js",
+    "dev:http": "node --env-file-if-exists=.env ./node_modules/.bin/tsx src/http.ts",
+    "dev:stdio": "node --env-file-if-exists=.env ./node_modules/.bin/tsx src/stdio.ts",
+    "start": "node --env-file-if-exists=.env dist/http.js",
+    "start:stdio": "node --env-file-if-exists=.env dist/stdio.js",
+    "prewarm": "node --env-file-if-exists=.env ./node_modules/.bin/tsx src/prewarm.ts",
+    "prewarm:prod": "node --env-file-if-exists=.env dist/prewarm.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -23,6 +25,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.3.2",
+    "markdown-it": "^14.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

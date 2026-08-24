@@ -3,86 +3,52 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>카더라 말고 테스트 콘솔</title>
+    <meta name="theme-color" content="#f7f7f5" />
+    <title>카더라 말고</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="workspace">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Evidence RAG Test Console</p>
+    <div class="chat-app">
+      <header class="chat-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">ㅋ</span>
+          <div class="brand-copy">
             <h1>카더라 말고</h1>
+            <span id="runtimeStatus" class="runtime-status">
+              <span class="status-dot" aria-hidden="true"></span>
+              연결 확인 중
+            </span>
           </div>
-          <div id="runtimeBadge" class="runtime">runtime 확인 중</div>
-        </header>
+        </div>
+        <button id="newChatButton" class="new-chat-button" type="button">새 대화</button>
+      </header>
 
-        <form id="claimForm" class="query-panel">
-          <label for="question">검증할 주장</label>
-          <div class="query-row">
-            <textarea id="question" name="question" rows="3">단백질 과다섭취가 콩팥에 나빠?</textarea>
-            <button id="submitButton" type="submit">검증</button>
+      <main id="conversation" class="conversation" aria-live="polite" aria-label="대화 내용">
+        <article class="message assistant-message">
+          <div class="assistant-avatar" aria-hidden="true">ㅋ</div>
+          <div class="message-content">
+            <p>궁금한 내용을 물어보세요.</p>
           </div>
-          <div class="controls">
-            <label>
-              카테고리
-              <select id="category" name="category">
-                <option value="auto" selected>auto</option>
-                <option value="health">health</option>
-                <option value="childcare">childcare</option>
-                <option value="education">education</option>
-                <option value="exercise">exercise</option>
-                <option value="nutrition">nutrition</option>
-                <option value="psychology">psychology</option>
-              </select>
-            </label>
-            <label>
-              검색 개수
-              <input id="limit" name="limit" type="number" min="1" max="10" value="5" />
-            </label>
-            <button type="button" class="ghost" data-sample="공복 유산소가 살 더 빠져?" data-category="exercise">공복 유산소</button>
-            <button type="button" class="ghost" data-sample="아이한테 유튜브 오래 보여주면 언어발달에 안 좋아?" data-category="childcare">육아 질문</button>
-            <button type="button" class="ghost" data-sample="불안할 때 명상이 실제로 도움이 돼?" data-category="psychology">심리 질문</button>
-          </div>
+        </article>
+      </main>
+
+      <footer class="composer-area">
+        <form id="chatForm" class="composer">
+          <label class="sr-only" for="messageInput">메시지</label>
+          <textarea
+            id="messageInput"
+            name="message"
+            rows="1"
+            maxlength="350"
+            placeholder="메시지를 입력하세요"
+            autocomplete="off"
+          ></textarea>
+          <button id="sendButton" class="send-button" type="submit">전송</button>
         </form>
+      </footer>
+    </div>
 
-        <section class="grid">
-          <article class="panel answer-panel">
-            <div class="panel-head">
-              <h2>최종 답변</h2>
-              <span id="verdict" class="pill">대기</span>
-            </div>
-            <div id="answer" class="answer empty">질문을 입력하고 검증을 누르면 한국어 답변이 표시됩니다.</div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-head">
-              <h2>수집 로그</h2>
-              <button id="clearLogs" type="button" class="small">지우기</button>
-            </div>
-            <ol id="logs" class="logs"></ol>
-          </article>
-        </section>
-
-        <section class="grid evidence-grid">
-          <article class="panel">
-            <div class="panel-head">
-              <h2>최종 선별 논문</h2>
-              <span id="paperCount" class="muted">0건</span>
-            </div>
-            <div id="papers" class="papers empty">아직 수집된 근거가 없습니다.</div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-head">
-              <h2>Raw JSON</h2>
-              <button id="copyJson" type="button" class="small">복사</button>
-            </div>
-            <pre id="rawJson" class="raw">{}</pre>
-          </article>
-        </section>
-      </section>
-    </main>
+    <script src="/vendor/markdown-it/markdown-it.min.js" defer></script>
     <script src="/app.js" type="module"></script>
   </body>
 </html>

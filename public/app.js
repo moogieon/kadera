@@ -1,370 +1,224 @@
-const form = document.querySelector("#claimForm");
-const questionInput = document.querySelector("#question");
-const categoryInput = document.querySelector("#category");
-const limitInput = document.querySelector("#limit");
-const submitButton = document.querySelector("#submitButton");
-const runtimeBadge = document.querySelector("#runtimeBadge");
-const logs = document.querySelector("#logs");
-const answer = document.querySelector("#answer");
-const verdict = document.querySelector("#verdict");
-const papers = document.querySelector("#papers");
-const paperCount = document.querySelector("#paperCount");
-const rawJson = document.querySelector("#rawJson");
-const clearLogs = document.querySelector("#clearLogs");
-const copyJson = document.querySelector("#copyJson");
+const conversation = document.querySelector("#conversation");
+const chatForm = document.querySelector("#chatForm");
+const messageInput = document.querySelector("#messageInput");
+const sendButton = document.querySelector("#sendButton");
+const newChatButton = document.querySelector("#newChatButton");
+const runtimeStatus = document.querySelector("#runtimeStatus");
 
-let lastJson = {};
-
-const answerHeadings = [
-  "판정",
-  "누가 맞나",
-  "숫자로 보면",
-  "성인 예시",
-  "논문/연구가 실제로 말하는 것",
-  "연구가 실제로 한 일",
-  "감미료별로 보면",
-  "성분/제품 라벨에서 볼 것",
-  "틀리기 쉬운 포인트",
-  "내가 확인할 것",
-  "근거 기반 상세 해석",
-  "대상자별로 보면",
-  "대표 연구를 짧게 보면",
-  "대표 연구를 뜯어보면"
-];
+let busy = false;
+const markdown = typeof window.markdownit === "function"
+  ? window.markdownit({
+    html: false,
+    linkify: true,
+    breaks: true,
+    typographer: false
+  })
+  : null;
 
 boot();
 
-form.addEventListener("submit", async (event) => {
+chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await runClaim();
+  await sendMessage();
 });
 
-clearLogs.addEventListener("click", () => {
-  logs.innerHTML = "";
+messageInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  chatForm.requestSubmit();
 });
 
-copyJson.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
-  addLog("Raw JSON을 클립보드에 복사했습니다.", "ok");
-});
+messageInput.addEventListener("input", resizeComposer);
 
-document.querySelectorAll("[data-sample]").forEach((button) => {
-  button.addEventListener("click", () => {
-    questionInput.value = button.dataset.sample;
-    categoryInput.value = button.dataset.category || "auto";
-  });
+newChatButton.addEventListener("click", () => {
+  conversation.replaceChildren(createAssistantMessage("궁금한 내용을 물어보세요."));
+  messageInput.value = "";
+  resizeComposer();
+  messageInput.focus();
 });
 
 async function boot() {
   try {
-    const status = await getJson("/api/runtime-status");
-    runtimeBadge.textContent = status.llm.enabled
-      ? `Gemini RAG ON · ${status.llm.model}`
-      : `Gemini RAG OFF · ${status.llm.fallback}`;
-    runtimeBadge.classList.toggle("on", Boolean(status.llm.enabled));
-    addLog(`런타임 확인: ${runtimeBadge.textContent}`, "ok");
-
-    const dataSources = await getJson("/api/data-sources");
-    const enabled = dataSources.sources.filter((source) => source.enabled).length;
-    addLog(`데이터소스 ${dataSources.sources.length}개 등록, ${enabled}개 활성`, "ok");
-  } catch (error) {
-    runtimeBadge.textContent = "public mode";
-    runtimeBadge.classList.remove("on");
-    addLog("공개 모드: 내부 런타임/데이터소스 진단은 숨겨져 있습니다.", "info");
+    const response = await fetch("/healthz");
+    if (!response.ok) throw new Error("health unavailable");
+    const status = await response.json();
+    setRuntimeStatus(status.ok ? "연결됨" : "연결 확인 중", Boolean(status.ok));
+  } catch {
+    setRuntimeStatus("연결 확인 중", false);
   }
+  messageInput.focus();
 }
 
-async function runClaim() {
-  const payload = {
-    question: questionInput.value.trim(),
-    category: categoryInput.value,
-    limit: Number(limitInput.value || 5),
-    skipCache: true
-  };
-  if (payload.question.length < 2) return;
+async function sendMessage() {
+  const message = messageInput.value.trim();
+  if (busy || message.length < 2) return;
 
+  appendMessage("user", message);
+  messageInput.value = "";
+  resizeComposer();
   setBusy(true);
-  resetResult();
-  addLog(`질문 입력: ${payload.question}`, "info");
-  addLog(`카테고리=${payload.category}, 소스별 limit=${payload.limit}`, "info");
+  const loadingMessage = appendLoadingMessage();
 
   try {
-    addLog("1단계: 연구 데이터소스에서 근거 수집 시작", "info");
-    addLog("2단계: 같은 근거 묶음으로 AI/RAG 답변 합성", "info");
-    const result = await postJson("/api/check-claim", payload);
-    addLog(`인용 ${result.citations.length}건 선별`, result.citations.length ? "ok" : "warn");
-    renderPapers(result.citations);
+    const result = await postJson("/api/chat", {
+      message,
+      category: "auto"
+    });
 
-    addLog(`최종 판정: ${result.verdict}, 근거수준: ${result.evidence_level}`, "ok");
-    addLog(`인용 ${result.citations.length}건, 캐시=${result.cached ? "hit" : "miss"}`, "ok");
-    renderAnswer(result);
-    setRaw({ answer: result });
+    loadingMessage.remove();
+    appendMessage("assistant", result.text || "답변을 불러오지 못했습니다.");
   } catch (error) {
-    addLog(`실패: ${messageOf(error)}`, "error");
-    answer.textContent = messageOf(error);
-    answer.classList.remove("empty");
+    loadingMessage.remove();
+    appendMessage("assistant", messageOf(error), true);
   } finally {
     setBusy(false);
+    messageInput.focus();
   }
 }
 
-function renderAnswer(result) {
-  verdict.textContent = result.verdict;
-  verdict.className = `pill ${result.verdict}`;
-  answer.classList.remove("empty");
-
-  const citations = result.citations
-    .map((citation, index) => {
-      const year = citation.year ? `, ${citation.year}` : "";
-      const doi = citation.doi ? `, DOI ${escapeHtml(citation.doi)}` : "";
-      const venue = citation.venue ? `, ${escapeHtml(citation.venue)}` : "";
-      const publisher = citation.publisher ? `, ${escapeHtml(citation.publisher)}` : "";
-      const institutions = citation.institutions?.length ? `, 기관 ${escapeHtml(citation.institutions.slice(0, 2).join(", "))}` : "";
-      return `<li><a href="${escapeAttribute(safeUrl(citation.url))}" target="_blank" rel="noreferrer">[${index + 1}] ${escapeHtml(citation.title)}</a><span>${escapeHtml(citation.source)}${year}${venue}${publisher}${institutions}${doi}</span></li>`;
-    })
-    .join("");
-
-  const practicalChecks = (result.practical_checks || [])
-    .map(
-      (item, index) => `
-        <li>
-          <strong>${index + 1}. ${escapeHtml(item.label)}</strong>
-          <span>해보기: ${escapeHtml(item.what_to_try_ko)}</span>
-          <span>관찰: ${escapeHtml(item.what_to_watch_ko)}</span>
-          <span>이유: ${escapeHtml(item.why_it_matters_ko)}</span>
-        </li>
-      `
-    )
-    .join("");
-
-  answer.innerHTML = `
-    <div class="answer-body">${formatAnswerBody(result.answer_ko)}</div>
-    <h3>확인해볼 것</h3>
-    <ul class="checks">${practicalChecks || "<li>체크 포인트 없음</li>"}</ul>
-    <h3>출처</h3>
-    <ul class="citations">${citations || "<li>출처 없음</li>"}</ul>
-    ${renderLimitationsNote(result.limitations)}
-  `;
+function appendMessage(role, text, isError = false) {
+  const message = role === "assistant" ? createAssistantMessage(text, isError) : createUserMessage(text);
+  conversation.append(message);
+  scrollToLatest();
+  return message;
 }
 
-function renderLimitationsNote(items) {
-  const useful = (items || [])
-    .filter((item) => !/자동 MVP|원문 전문 검토|효과 방향 판정/.test(item))
-    .slice(0, 2);
-  if (!useful.length) return "";
-  return `<p class="answer-note">참고: ${escapeHtml(useful.join(" "))}</p>`;
+function createAssistantMessage(text, isError = false) {
+  const article = document.createElement("article");
+  article.className = `message assistant-message${isError ? " error-message" : ""}`;
+
+  const avatar = document.createElement("div");
+  avatar.className = "assistant-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = "ㅋ";
+
+  const content = document.createElement("div");
+  content.className = "message-content";
+  content.append(createMarkdownContent(text));
+
+  article.append(avatar, content);
+  return article;
 }
 
-function formatAnswerBody(value) {
-  const sections = dedupeAnswerSections(splitAnswerSections(value));
-  return sections.map(renderAnswerSection).join("");
+function createUserMessage(text) {
+  const article = document.createElement("article");
+  article.className = "message user-message";
+
+  const content = document.createElement("div");
+  content.className = "message-content";
+  const paragraph = document.createElement("p");
+  paragraph.textContent = text;
+  content.append(paragraph);
+  article.append(content);
+  return article;
 }
 
-function splitAnswerSections(value) {
-  const pattern = new RegExp(`(^|\\s)(${answerHeadings.map(escapeRegExp).join("|")}):`, "g");
-  const normalized = String(value ?? "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\*\*/g, "")
-    .replace(/^#{1,4}\s*/gm, "")
-    .replace(pattern, "\n\n$2:")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function createMarkdownContent(text) {
+  const body = document.createElement("div");
+  body.className = "markdown-body";
 
-  const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
-  return blocks.length ? blocks : [String(value ?? "")];
-}
-
-function dedupeAnswerSections(blocks) {
-  const byHeading = new Map();
-  const output = [];
-
-  for (const block of blocks) {
-    const heading = answerHeadingOf(block);
-    if (!heading) {
-      output.push(block);
-      continue;
-    }
-
-    const key = heading.startsWith("대표 연구") ? "대표 연구" : heading;
-    const existingIndex = byHeading.get(key);
-    if (existingIndex === undefined) {
-      byHeading.set(key, output.length);
-      output.push(block);
-      continue;
-    }
-
-    if (key === "대표 연구" && block.includes("무엇을 했나")) {
-      output[existingIndex] = block;
-    }
+  if (!markdown) {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = text;
+    body.append(paragraph);
+    return body;
   }
 
-  const hasStructuredAnswer = output.some((block) => ["판정", "누가 맞나"].includes(answerHeadingOf(block)));
+  body.innerHTML = markdown.render(text);
+  secureMarkdownLinks(body);
+  removeMarkdownImages(body);
+  wrapMarkdownTables(body);
+  return body;
+}
 
-  return output.filter((block) => {
-    const heading = answerHeadingOf(block);
-    if (hasStructuredAnswer && heading === "근거 기반 상세 해석") return false;
-    const body = heading ? block.slice(block.indexOf(":") + 1).trim() : block.trim();
-    return body.length > 0;
+function secureMarkdownLinks(body) {
+  for (const link of body.querySelectorAll("a")) {
+    const href = link.getAttribute("href")?.trim() ?? "";
+    if (!isSafeLink(href)) {
+      link.replaceWith(document.createTextNode(link.textContent ?? ""));
+      continue;
+    }
+    link.target = "_blank";
+    link.rel = "noreferrer";
+  }
+}
+
+function removeMarkdownImages(body) {
+  for (const image of body.querySelectorAll("img")) image.remove();
+}
+
+function wrapMarkdownTables(body) {
+  for (const table of body.querySelectorAll("table")) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "markdown-table-scroll";
+    table.before(wrapper);
+    wrapper.append(table);
+  }
+}
+
+function isSafeLink(href) {
+  try {
+    const url = new URL(href, window.location.origin);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function appendLoadingMessage() {
+  const article = document.createElement("article");
+  article.className = "message assistant-message loading-message";
+  article.setAttribute("aria-label", "답변 생성 중");
+
+  const avatar = document.createElement("div");
+  avatar.className = "assistant-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = "ㅋ";
+
+  const dots = document.createElement("div");
+  dots.className = "typing-dots";
+  dots.setAttribute("aria-hidden", "true");
+  dots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+
+  article.append(avatar, dots);
+  conversation.append(article);
+  scrollToLatest();
+  return article;
+}
+
+function setBusy(value) {
+  busy = value;
+  sendButton.disabled = value;
+  messageInput.disabled = value;
+}
+
+function setRuntimeStatus(label, connected) {
+  runtimeStatus.lastChild.textContent = ` ${label}`;
+  runtimeStatus.classList.toggle("connected", connected);
+}
+
+function resizeComposer() {
+  messageInput.style.height = "auto";
+  messageInput.style.height = `${Math.min(messageInput.scrollHeight, 160)}px`;
+}
+
+function scrollToLatest() {
+  requestAnimationFrame(() => {
+    conversation.scrollTo({ top: conversation.scrollHeight, behavior: "smooth" });
   });
 }
 
-function answerHeadingOf(block) {
-  const match = String(block ?? "").match(/^([^:\n]{2,40}):/);
-  if (!match) return undefined;
-  const heading = match[1].trim();
-  return isKnownAnswerHeading(heading) ? heading : undefined;
-}
-
-function renderAnswerSection(block) {
-  const match = block.match(/^([^:\n]{2,40}):\s*([\s\S]*)$/);
-  if (match && isKnownAnswerHeading(match[1])) {
-    const heading = match[1].trim();
-    const body = match[2].trim();
-    const className = heading.startsWith("대표 연구") ? "answer-section evidence-summary" : "answer-section";
-    return `
-      <section class="${className}">
-        <h3>${escapeHtml(heading)}</h3>
-        ${renderSectionContent(body, heading)}
-      </section>
-    `;
-  }
-  return `<section class="answer-section">${renderSectionContent(block)}</section>`;
-}
-
-function renderSectionContent(value, heading = "") {
-  const lines = splitSectionLines(String(value ?? ""), heading);
-  if (lines.length > 1 || lines.some((line) => /^(\[\d+\]|\d+\.)\s/.test(line))) {
-    return `<ul>${lines.map((line) => `<li>${escapeHtml(cleanListMarker(line))}</li>`).join("")}</ul>`;
-  }
-  return `<p>${escapeHtml(value)}</p>`;
-}
-
-function splitSectionLines(value, heading) {
-  const baseLines = value.split("\n").map((line) => line.trim()).filter(Boolean);
-  if (baseLines.length > 1) return baseLines;
-  if (["감미료별로 보면", "성분/제품 라벨에서 볼 것", "내가 확인할 것"].includes(heading)) {
-    return value
-      .split(/(?<=다\.|요\.|니다\.|세요\.)\s+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-  return baseLines;
-}
-
-function cleanListMarker(value) {
-  return value.replace(/^\s*[-*]\s+/, "");
-}
-
-function isKnownAnswerHeading(value) {
-  return answerHeadings.includes(value.trim());
-}
-
-function renderPapers(items) {
-  paperCount.textContent = `${items.length}건`;
-  if (items.length === 0) {
-    papers.className = "papers empty";
-    papers.textContent = "관련 근거가 없습니다.";
-    return;
-  }
-
-  papers.className = "papers";
-  papers.innerHTML = items
-    .map((paper, index) => {
-      const authors = paper.authors?.slice(0, 4).join(", ") || "저자 정보 없음";
-      const abstract = paper.abstract ? escapeHtml(paper.abstract.slice(0, 420)) : "초록 없음";
-      return `
-        <article class="paper">
-          <div class="paper-top">
-            <span class="paper-index">${index + 1}</span>
-          <span class="source">${escapeHtml(paper.source)}</span>
-          <span class="level">${escapeHtml(paper.evidenceLevel || "unknown")}</span>
-          ${paper.venue ? `<span class="level">${escapeHtml(paper.venue)}</span>` : ""}
-          <span class="year">${paper.year || ""}</span>
-        </div>
-          <h3><a href="${escapeAttribute(safeUrl(paper.url))}" target="_blank" rel="noreferrer">${escapeHtml(paper.title)}</a></h3>
-          <p class="authors">${escapeHtml(authors)}</p>
-          <p>${abstract}</p>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function resetResult() {
-  answer.textContent = "수집 중입니다.";
-  answer.className = "answer empty";
-  papers.textContent = "근거 수집 중입니다.";
-  papers.className = "papers empty";
-  paperCount.textContent = "0건";
-  verdict.textContent = "진행 중";
-  verdict.className = "pill";
-  setRaw({});
-}
-
-function setRaw(value) {
-  lastJson = value;
-  rawJson.textContent = JSON.stringify(value, null, 2);
-}
-
-function addLog(text, type = "info") {
-  const li = document.createElement("li");
-  li.className = type;
-  li.innerHTML = `<time>${new Date().toLocaleTimeString("ko-KR", { hour12: false })}</time><span>${escapeHtml(text)}</span>`;
-  logs.appendChild(li);
-  logs.scrollTop = logs.scrollHeight;
-}
-
-function setBusy(isBusy) {
-  submitButton.disabled = isBusy;
-  submitButton.textContent = isBusy ? "수집 중" : "검증";
-}
-
-async function getJson(url) {
-  const response = await fetch(url);
-  return readJson(response);
-}
-
-async function postJson(url, body) {
+async function postJson(url, payload) {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(payload)
   });
-  return readJson(response);
-}
-
-async function readJson(response) {
-  const json = await response.json();
-  if (!response.ok) throw new Error(json.error || response.statusText);
-  return json;
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `요청에 실패했습니다. (${response.status})`);
+  return result;
 }
 
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function escapeAttribute(value) {
-  return escapeHtml(value).replaceAll("`", "&#096;");
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function safeUrl(value) {
-  try {
-    const url = new URL(String(value ?? ""), window.location.href);
-    return ["http:", "https:"].includes(url.protocol) ? url.href : "#";
-  } catch {
-    return "#";
-  }
 }

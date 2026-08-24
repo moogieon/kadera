@@ -1,8 +1,10 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import { formatAnswerForText, formatEvidenceDetailsForText } from "./answer.js";
 import { loadConfig } from "./config.js";
 import { createKaderaMcpServer } from "./mcp.js";
+import { createRequestRateLimiter } from "./rateLimit.js";
 import { ClaimCheckerService } from "./service.js";
 import type { Category } from "./types.js";
 
@@ -12,7 +14,11 @@ const app = createMcpExpressApp({
   host: "0.0.0.0",
   allowedHosts: config.mcpAllowedHosts
 });
-const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+const rateLimit = createRequestRateLimiter({
+  maxRequests: config.rateLimitMaxRequests,
+  mcpMaxRequests: config.mcpRateLimitMaxRequests,
+  windowMs: config.rateLimitWindowMs
+});
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -24,10 +30,29 @@ app.use((_req, res, next) => {
   next();
 });
 app.use(rateLimit);
+app.use(
+  "/vendor/markdown-it",
+  express.static("node_modules/markdown-it/dist", {
+    index: false,
+    immutable: true,
+    maxAge: "7d"
+  })
+);
 app.use(express.static("public"));
 
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, name: "kadera-malgo" });
+});
+
+app.post("/api/chat", async (req, res) => {
+  try {
+    const message = readChatMessage(req.body);
+    const category = readCategory(req.body?.category);
+    const answer = await service.checkClaim({ question: message, category });
+    res.json({ mode: "claim", text: formatAnswerForText(answer), answer });
+  } catch (error) {
+    res.status(400).json({ error: errorMessage(error) });
+  }
 });
 
 if (config.exposeDiagnosticApis) {
@@ -61,10 +86,35 @@ app.post("/api/check-claim", async (req, res) => {
 });
 
 if (config.exposeDiagnosticApis) {
+  app.post("/api/explain-evidence", async (req, res) => {
+    try {
+      const input = normalizeClaimRequest(req.body);
+      const claimId = readClaimId(req.body);
+      const answer = await service.explainEvidence({
+        question: input.question,
+        category: input.category,
+        claimId
+      });
+      res.json(answer);
+    } catch (error) {
+      res.status(400).json({ error: errorMessage(error) });
+    }
+  });
+
   app.post("/api/research-claim", async (req, res) => {
     try {
       const input = normalizeClaimRequest(req.body);
       const result = await service.checkClaimWithTrace(input);
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ error: errorMessage(error) });
+    }
+  });
+
+  app.post("/api/compare-models", async (req, res) => {
+    try {
+      const input = normalizeClaimRequest(req.body);
+      const result = await service.compareClaimModels(input);
       res.json(result);
     } catch (error) {
       res.status(400).json({ error: errorMessage(error) });
@@ -147,26 +197,35 @@ function normalizeClaimRequest(body: unknown): { question: string; category?: Ca
   };
 }
 
+function readClaimId(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const value = (body as { claim_id?: unknown; claimId?: unknown }).claim_id ??
+    (body as { claim_id?: unknown; claimId?: unknown }).claimId;
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length < 1 || value.length > 80) {
+    throw new Error("claim_id must be a non-empty string of at most 80 characters.");
+  }
+  return value;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction): void {
-  const now = Date.now();
-  const ip = req.ip || req.socket.remoteAddress || "unknown";
-  const bucket = rateBuckets.get(ip);
-  if (!bucket || bucket.resetAt <= now) {
-    rateBuckets.set(ip, { count: 1, resetAt: now + config.rateLimitWindowMs });
-    next();
-    return;
+function readChatMessage(body: unknown): string {
+  if (!body || typeof body !== "object") throw new Error("요청 본문이 필요합니다.");
+  const message = (body as Record<string, unknown>).message;
+  if (typeof message !== "string") throw new Error("message는 문자열이어야 합니다.");
+  const trimmed = message.trim();
+  if (trimmed.length < 2 || trimmed.length > config.maxQuestionLength) {
+    throw new Error(`message는 2자 이상 ${config.maxQuestionLength}자 이하여야 합니다.`);
   }
+  return trimmed;
+}
 
-  bucket.count += 1;
-  if (bucket.count > config.rateLimitMaxRequests) {
-    const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-    res.setHeader("Retry-After", String(retryAfter));
-    res.status(429).json({ error: "Too many requests. Please retry later." });
-    return;
-  }
-  next();
+function readCategory(value: unknown): Category {
+  const category = typeof value === "string" ? value : "auto";
+  return ["auto", "health", "childcare", "education", "exercise", "nutrition", "psychology"].includes(category)
+    ? category as Category
+    : "auto";
 }

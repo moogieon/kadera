@@ -58,7 +58,10 @@ function toPaper(work: CoreWork): Paper | undefined {
     publisher: work.publisher ?? firstNamed(work.repositories),
     year: work.yearPublished,
     doi: work.doi,
-    url: work.fullTextLink ?? work.downloadUrl ?? (work.doi ? `https://doi.org/${work.doi}` : `https://core.ac.uk/works/${work.id}`),
+    // CORE can return empty strings for a link field. Treat those as absent so
+    // a DOI or the CORE record remains usable in the user-facing paper list.
+    url: firstNonBlank(work.fullTextLink, work.downloadUrl)
+      ?? (work.doi ? `https://doi.org/${work.doi}` : `https://core.ac.uk/works/${work.id}`),
     abstract: work.abstract,
     publicationTypes,
     evidenceLevel: inferEvidenceLevel(publicationTypes, "core"),
@@ -72,4 +75,8 @@ function firstNamed(values: Array<{ title?: string; name?: string }> | string[] 
   const first = values[0];
   if (!first) return undefined;
   return typeof first === "string" ? first : first.title ?? first.name;
+}
+
+function firstNonBlank(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => Boolean(value?.trim()))?.trim();
 }

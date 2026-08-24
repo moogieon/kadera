@@ -72,6 +72,7 @@ KCI_API_KEY=
 RISS_API_KEY=
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash-lite
+STRICT_LATENCY_MODE=false
 MAX_QUESTION_LENGTH=350
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=8
@@ -83,6 +84,7 @@ MCP_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
 `PUBMED_API_KEY`와 `SEMANTIC_SCHOLAR_API_KEY`는 없어도 동작하지만, rate limit 안정성을 위해 배포 환경에서는 설정하는 것이 좋습니다.
 `CORE_API_KEY`, `KCI_API_KEY`, `RISS_API_KEY`가 없으면 해당 adapter는 비활성입니다.
 `GEMINI_API_KEY`가 있으면 검색된 논문 메타데이터와 초록만 컨텍스트로 넘겨 한국어 RAG 합성 답변을 생성합니다. 기본 모델은 저비용 운영용 `gemini-2.5-flash-lite`이며, `GEMINI_MODEL`로 바꿀 수 있습니다. 없거나 실패하면 규칙 기반 근거 해석으로 자동 fallback합니다.
+Kakao Tools 운영에서는 `STRICT_LATENCY_MODE=true`를 사용합니다. 같은 질문의 저장된 검증 결과가 있으면 즉시 반환하고, 처음 보는 질문이면 호스트 AI가 구조화한 연구 의도로 PubMed·Europe PMC·OpenAlex·Crossref를 제한 시간 안에 병렬 검색해 첫 요청에서 근거 답변을 반환합니다. 이후 심층 검증 결과는 다음 요청의 품질과 속도를 높이는 용도로만 저장하며, 사용자가 캐시 상태를 알거나 같은 질문을 다시 입력할 필요는 없습니다. `npm run prewarm:prod`는 자주 묻는 질문의 응답 시간을 더 줄이는 선택적 운영 최적화입니다.
 공개 운영에서는 비용 방어를 위해 기본 rate limit이 `8회/분/IP`, 질문 길이가 `350자`로 제한됩니다. 내부 추적용 `/api/research-claim`, `/api/find-evidence`, `/api/runtime-status`, `/api/data-sources`와 MCP 진단 도구는 각각 `EXPOSE_DIAGNOSTIC_APIS=true`, `EXPOSE_DIAGNOSTIC_TOOLS=true`일 때만 열립니다.
 
 RAG 구조는 다음처럼 동작합니다.
