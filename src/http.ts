@@ -40,8 +40,20 @@ app.use(
 );
 app.use(express.static("public"));
 
+/**
+ * Whether a deploy actually landed was only observable by probing behaviour
+ * and guessing, and one such guess reported a rollout that had not happened.
+ * Report the commit instead. Railway and most builders expose it already; the
+ * fallbacks cover the platforms that use a different name.
+ */
+const buildCommit = (process.env.GIT_COMMIT
+  ?? process.env.RAILWAY_GIT_COMMIT_SHA
+  ?? process.env.SOURCE_COMMIT
+  ?? process.env.VERCEL_GIT_COMMIT_SHA
+  ?? "unknown").slice(0, 12);
+
 app.get("/healthz", (_req, res) => {
-  res.json({ ok: true, name: "kadera-malgo" });
+  res.json({ ok: true, name: "kadera-malgo", commit: buildCommit });
 });
 
 app.post("/api/chat", async (req, res) => {

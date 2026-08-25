@@ -12,6 +12,11 @@ RUN npm run build
 
 FROM node:22-slim AS runtime
 
+# Lets a deployed container name the commit it is running, so a rollout can be
+# confirmed with one call instead of inferred from behaviour.
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
