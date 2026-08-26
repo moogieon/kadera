@@ -455,6 +455,38 @@ describe("generic research-answer contract", () => {
     expect(answer.detail?.key_studies[0]?.exposure_ko).toBe("인공감미료·저칼로리 음료 섭취");
   });
 
+  it("does not relabel a low-calorie fasting comparator as a no-sugar beverage", () => {
+    const intent: ResearchIntent = {
+      questionType: "other",
+      exposure: "intermittent fasting",
+      exposureTerms: ["intermittent fasting", "time-restricted eating", "alternate-day fasting"],
+      comparatorTerms: ["continuous energy restriction", "low-calorie diet"],
+      outcomeTerms: ["body weight", "metabolic health"],
+      populationTerms: ["adults"],
+      timeHorizon: "mixed",
+      preferredStudyDesigns: ["systematic review"],
+      directEvidenceGroups: [["intermittent fasting", "time-restricted eating"], ["body weight", "metabolic health"]],
+      evidenceStrategy: "direct_only",
+      contextualEvidenceTerms: []
+    };
+    const fastingReview = {
+      ...paper(
+        "fasting-review",
+        "Intermittent fasting versus continuous energy restriction: a systematic review",
+        "Intermittent fasting reduced body weight by 1.29 kg compared with a low-calorie diet."
+      ),
+      groundedFindingKo: "간헐적 단식은 저칼로리 식단보다 체중을 1.29kg 더 감소시켰습니다.",
+      groundedSourceSentence: "Intermittent fasting reduced body weight by 1.29 kg compared with a low-calorie diet."
+    };
+    const answer = composeAnswer("간헐적 단식에 대해 궁금해", {
+      ...evidenceFor(intent, [fastingReview]),
+      searchPlannedBy: "openai"
+    }, false);
+
+    expect(answer.detail?.key_studies[0]?.exposure_ko).toContain("간헐적 단식");
+    expect(answer.detail?.key_studies[0]?.exposure_ko).not.toContain("음료");
+  });
+
   it("keeps a contextual systematic review ahead of an exact-topic cohort in a broad overview", () => {
     const intent: ResearchIntent = {
       questionType: "other",

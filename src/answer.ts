@@ -3859,8 +3859,10 @@ function buildKeyStudyDetail(
 function evidenceExposureFromPaper(paper: Paper, intent: ResearchIntent | undefined, question: string): string {
   const text = normalizeEvidenceText(`${paper.title} ${paper.abstract ?? ""}`);
   const planned = `${intent?.exposure ?? ""} ${intent?.exposureTerms.join(" ") ?? ""} ${question}`.toLowerCase();
-  const asksForNoSugarDrink = /\b(?:zero[- ]?(?:sugar|calorie)|sugar[- ]?free|diet(?:\s+(?:soda|soft\s+drink|beverage))?|low[- ]?(?:calorie|energy)|no[- ]?(?:calorie|sugar)|non[- ]?(?:caloric|nutritive)|artificially\s+sweetened(?:\s+(?:beverage|drink|soda|soft\s+drink))?)\b/i.test(planned);
-  const paperNamesNoSugarDrink = /\b(?:zero[- ]?(?:sugar|calorie)|sugar[- ]?free|diet(?:\s+(?:soda|soft\s+drink|beverage))?|low[- ]?(?:calorie|energy)|no[- ]?(?:calorie|sugar)|non[- ]?(?:caloric|nutritive)|artificially\s+sweetened(?:\s+(?:beverage|drink|soda|soft\s+drink))?|\bASB\b|\bLCS\b)\b/i.test(text);
+  const questionNamesDrink = /(?:음료|콜라|소다|탄산|beverages?|drinks?|sodas?|soft\s+drinks?)/i.test(question);
+  const questionNamesNoSugar = /(?:제로|무설탕|저칼로리|무칼로리|인공감미료|zero[- ]?(?:sugar|calorie)|sugar[- ]?free|diet|low[- ]?(?:calorie|energy)|no[- ]?(?:calorie|sugar)|non[- ]?(?:caloric|nutritive)|artificially\s+sweetened)/i.test(question);
+  const asksForNoSugarDrink = questionNamesDrink && questionNamesNoSugar;
+  const paperNamesNoSugarDrink = /\b(?:zero[- ]?(?:sugar|calorie)(?:\s+(?:sodas?|soft\s+drinks?|beverages?|drinks?))?|sugar[- ]?free(?:\s+(?:sodas?|soft\s+drinks?|beverages?|drinks?))?|diet(?:\s+(?:sodas?|soft\s+drinks?|beverages?|drinks?))|low[- ]?(?:calorie|energy)(?:\s+(?:sweetened\s+)?(?:sodas?|soft\s+drinks?|beverages?|drinks?))|no[- ]?(?:calorie|sugar)(?:\s+(?:sodas?|soft\s+drinks?|beverages?|drinks?))|non[- ]?(?:caloric|nutritive)(?:\s+sweetened)?(?:\s+(?:sodas?|soft\s+drinks?|beverages?|drinks?))|artificially\s+sweetened(?:\s+(?:beverages?|drinks?|sodas?|soft\s+drinks?))|ASBs?|LCS)\b/i.test(text);
   // A review can report sugar-sweetened and zero/low-calorie beverages in
   // the same result sentence. When the user asked about the latter, label
   // the study by that requested exposure rather than the first sibling that
