@@ -53,6 +53,8 @@ describe("MCP evidence package", () => {
 
     expect(text).toContain("최종 답변은 다음 로컬 Kadera 형식을 유지");
     expect(text).toContain("## 현재 판단");
+    expect(text).toContain("**한줄 결론:**");
+    expect(text).toContain("숫자 없이 평이한 한 문장");
     expect(text).toContain("## 이번 판단에 사용한 근거");
     expect(text).toContain("## 연구 결과 한눈에 보기");
     expect(text).toContain("## 대표 논문 N편");
