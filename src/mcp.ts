@@ -239,6 +239,16 @@ export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string
   const lines = [
     "## 카더라 말고(Kadera) 논문 근거",
     "아래는 원문 초록에서 확인한 결과입니다. 최종 답변은 한국어로 쓰되 이 목록에 없는 사실·수치를 추가하지 말고, 기억이나 일반 지식으로 보완하지 마세요. '연관'을 인과관계로 바꾸지 말고, 연구 간 결과가 엇갈리면 그 사실을 밝히고, 원문 링크를 함께 보여주세요.",
+    [
+      "최종 답변은 다음 로컬 Kadera 형식을 유지하고, 짧은 일반론으로 축약하지 마세요:",
+      "1) '## 현재 판단' — 대표 연구들을 종합한 결론과 중요한 예외를 1~2개 문단으로 설명",
+      "2) '## 이번 판단에 사용한 근거' — 조회한 후보 문헌 수와 대표 논문 수를 명시",
+      "3) '## 연구 결과 한눈에 보기' — '연구 | 핵심 결과' 2열 표로 대표 논문을 모두 비교",
+      "4) '## 대표 논문 N편' — 각 논문마다 연도·연구 유형, 원문 제목, 대상·조건(초록에서 확인될 때만), 결과, 한계, 클릭 가능한 원문 링크를 표시",
+      "5) 안전성 결과가 있으면 '## 논문에서 확인된 안전성'",
+      "6) '## 연구를 읽을 때' — 대상·측정·추적 기간 차이와 일반화 한계를 설명",
+      "수치와 논문별 차이를 생략하지 말고, 근거에 없는 실천법을 덧붙이거나 '시작한다면' 같은 미완성 문장으로 끝내지 마세요. 대상·조건이나 기간을 초록에서 확인할 수 없으면 추측하지 말고 해당 항목을 생략하세요."
+    ].join("\n"),
     // Papers are indexed by ingredient and by scholarly term, so an answer
     // about "마운자로" comes back as findings about tirzepatide. Left
     // unexplained the reader cannot tell which number is about what they
@@ -288,6 +298,7 @@ function hostEvidenceStructuredContent(evidence: EvidenceSearchResult) {
   const retrievedPaperCount = evidence.retrievedPaperCount ?? 0;
   return {
     status: papers.length > 0 ? "ok" : retrievedPaperCount > 0 ? "retrieved_but_filtered" : "no_results",
+    response_format: "kadera_local_detailed",
     retrieved_paper_count: retrievedPaperCount,
     usable_paper_count: papers.length,
     glossary: (evidence.glossary ?? []).map((entry) => ({ term: entry.term, asked_as: entry.askedAs })),

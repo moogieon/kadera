@@ -36,6 +36,30 @@ function paper(overrides: Partial<Paper>): Paper {
 }
 
 describe("MCP evidence package", () => {
+  it("asks the host to preserve the detailed local Kadera answer structure", () => {
+    const text = formatHostEvidenceForMcp({
+      category: "nutrition",
+      queryTerms: ["intermittent fasting weight loss systematic review"],
+      hostTopicTerms: ["intermittent fasting"],
+      retrievedPaperCount: 1,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [paper({
+        sourceId: "fasting-format",
+        title: "Intermittent fasting and body weight: a systematic review",
+        abstract: "RESULTS: Intermittent fasting reduced body weight by 1.29 kg."
+      })]
+    });
+
+    expect(text).toContain("최종 답변은 다음 로컬 Kadera 형식을 유지");
+    expect(text).toContain("## 현재 판단");
+    expect(text).toContain("## 이번 판단에 사용한 근거");
+    expect(text).toContain("## 연구 결과 한눈에 보기");
+    expect(text).toContain("## 대표 논문 N편");
+    expect(text).toContain("## 연구를 읽을 때");
+    expect(text).toContain("짧은 일반론으로 축약하지 마세요");
+  });
+
   it("keeps a quantified result sentence and removes adjacent-topic or no-result papers", () => {
     const evidence: EvidenceSearchResult = {
       category: "health",
