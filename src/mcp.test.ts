@@ -284,4 +284,91 @@ describe("MCP evidence package", () => {
     expect(text).not.toContain("relative risk estimates");
     expect(text).not.toContain("included 29 prospective studies");
   });
+
+  describe("host outcome terms", () => {
+    it("keeps intermittent-fasting evidence when the host uses consumer outcome labels", () => {
+      const evidence: EvidenceSearchResult = {
+        category: "nutrition",
+        queryTerms: ["intermittent fasting time restricted eating effects safety systematic review randomized controlled trial"],
+        hostTopicTerms: ["intermittent fasting", "time-restricted eating"],
+        hostOutcomeTerms: ["weight loss", "metabolic health", "safety"],
+        retrievedPaperCount: 38,
+        sourceErrors: [],
+        sourceTraces: [],
+        papers: [
+          paper({
+            sourceId: "fasting-meta",
+            title: "Intermittent fasting and cardiometabolic risk factors: a systematic review and meta-analysis",
+            abstract: "RESULTS: Intermittent fasting reduced body weight and fasting glucose compared with control diets. Adverse events were uncommon and similar between groups."
+          }),
+          paper({
+            sourceId: "tre-trial",
+            title: "Time-restricted eating in adults with metabolic syndrome: a randomized controlled trial",
+            evidenceLevel: "clinical_study",
+            abstract: "METHODS: Height and weight were recorded at baseline. RESULTS: Time-restricted eating reduced body weight by 3.2 kg and improved glycemic control."
+          }),
+          paper({
+            sourceId: "cognition",
+            title: "Intermittent fasting and cognitive performance in healthy adults",
+            abstract: "RESULTS: Intermittent fasting did not improve memory or attention scores."
+          })
+        ]
+      };
+
+      const text = formatHostEvidenceForMcp(evidence);
+
+      expect(text).toContain("Intermittent fasting and cardiometabolic risk factors");
+      expect(text).toContain("Time-restricted eating in adults with metabolic syndrome");
+      expect(text).not.toContain("cognitive performance");
+      expect(text).not.toContain("대표 논문 0편");
+    });
+
+    it("does not treat height recorded in BMI methods as a height outcome", () => {
+      const evidence: EvidenceSearchResult = {
+        category: "health",
+        queryTerms: ["sleep duration final adult height children"],
+        hostTopicTerms: ["sleep duration"],
+        hostOutcomeTerms: ["final adult height"],
+        retrievedPaperCount: 2,
+        sourceErrors: [],
+        sourceTraces: [],
+        papers: [
+          paper({
+            sourceId: "sleep-bmi",
+            title: "Sleep timing and body mass index in children",
+            abstract: "METHODS: Height and weight were measured to calculate BMI. RESULTS: Later sleep timing was associated with higher BMI."
+          }),
+          paper({
+            sourceId: "sleep-growth",
+            title: "Sleep duration and linear growth in school-aged children",
+            evidenceLevel: "observational_study",
+            abstract: "RESULTS: Longer sleep duration was associated with greater height velocity during follow-up."
+          })
+        ]
+      };
+
+      const text = formatHostEvidenceForMcp(evidence);
+
+      expect(text).toContain("Sleep duration and linear growth");
+      expect(text).not.toContain("body mass index");
+    });
+
+    it("returns an explicit non-empty diagnostic when retrieval succeeds but selection is empty", () => {
+      const notice = noUsableEvidenceNotice({
+        category: "nutrition",
+        queryTerms: ["intermittent fasting"],
+        hostTopicTerms: ["intermittent fasting"],
+        hostOutcomeTerms: ["unmatched endpoint"],
+        retrievedPaperCount: 38,
+        sourceErrors: [],
+        sourceTraces: [],
+        papers: []
+      });
+
+      expect(notice).toContain("문헌 38편");
+      expect(notice).toContain("대표 논문은 0편");
+      expect(notice).toContain("빈 목록을 만들지 마세요");
+      expect(notice).toContain("outcome_terms");
+    });
+  });
 });

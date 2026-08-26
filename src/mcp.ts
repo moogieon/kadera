@@ -275,18 +275,23 @@ export function noUsableEvidenceNotice(evidence: EvidenceSearchResult): string {
     return "관련해서 답할 만한 신뢰도 높은 연구를 찾지 못했습니다.";
   }
   return [
-    `이 검색어로는 문헌 ${evidence.retrievedPaperCount}편이 나왔지만 모두 사람 대상 건강 결과가 아니라 성분 분석·검출법·식품 가공·동물 실험이라 사용하지 않았습니다.`,
-    "검색어가 너무 넓습니다. 대상과 알고 싶은 결과를 함께 넣은 더 구체적인 영어 학술 검색어로 한 번 더 호출하세요.",
+    `검색 자체는 성공해 문헌 ${evidence.retrievedPaperCount}편을 확인했지만, 질문의 대상·결과와 일치하면서 초록에서 결과를 확인할 수 있는 대표 논문은 0편이었습니다.`,
+    "'현재 확인된 대표 연구는 다음과 같습니다' 같은 빈 목록을 만들지 마세요.",
+    "검색어 또는 outcome_terms가 논문에서 쓰는 표현보다 좁을 수 있습니다. 대상과 알고 싶은 결과를 포함하되 동의어를 사용한 더 구체적인 영어 학술 검색어로 한 번만 다시 호출하세요.",
     "예: 'lard' 대신 'lard saturated fat LDL cholesterol cardiovascular risk'.",
     "사용자에게 관련 연구가 없다고 답하지 마세요."
   ].join(" ");
 }
 
 function hostEvidenceStructuredContent(evidence: EvidenceSearchResult) {
+  const papers = hostEvidencePapers(evidence);
+  const retrievedPaperCount = evidence.retrievedPaperCount ?? 0;
   return {
-    retrieved_paper_count: evidence.retrievedPaperCount ?? 0,
+    status: papers.length > 0 ? "ok" : retrievedPaperCount > 0 ? "retrieved_but_filtered" : "no_results",
+    retrieved_paper_count: retrievedPaperCount,
+    usable_paper_count: papers.length,
     glossary: (evidence.glossary ?? []).map((entry) => ({ term: entry.term, asked_as: entry.askedAs })),
-    papers: hostEvidencePapers(evidence).map((paper) => ({
+    papers: papers.map((paper) => ({
       title: paper.title,
       year: paper.year,
       evidence_level: paper.evidenceLevel,
@@ -348,22 +353,23 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
   // pool instead; hostEvidenceScope marks those papers as unverified scope.
   const topicRepresentativePool = scopedPapers.length > 0 ? scopedPapers : usableCandidates;
   const outcomeAnchors = usableAnchors(evidence.hostOutcomeTerms?.map((term) => term.trim()).filter(Boolean) ?? []);
-  // The outcome must be what the paper studied, not a variable it happened to
-  // record. "height" appears in the abstract of almost any BMI study, because
-  // BMI is computed from height and weight, so an abstract match let
-  // "Social jetlag and body mass (BMI) in children" answer a question about
-  // growing taller. Anchor the endpoint in the title, and accept an abstract
-  // match only when no paper names the endpoint in its title at all.
+  // Outcome labels are host-written concepts, not guaranteed title phrases.
+  // Requiring them verbatim in the title made a carefully-filled call worse
+  // than one that omitted outcome_terms: intermittent-fasting searches found
+  // dozens of papers, then discarded all of them because papers write "body
+  // weight" and "cardiometabolic risk" instead of "weight loss" and
+  // "metabolic health". Conversely, searching the whole abstract admits BMI
+  // papers for a height question because Methods sections record height to
+  // calculate BMI. Match concepts in titles and in result-bearing text only.
   const outcomeInTitle = outcomeAnchors.length > 0
-    ? topicRepresentativePool.filter((paper) =>
-      hostTopicAnchorHits({ ...paper, abstract: undefined }, outcomeAnchors) > 0)
+    ? topicRepresentativePool.filter((paper) => hostOutcomeAnchorHits(paper.title, outcomeAnchors) > 0)
     : [];
-  // No abstract fallback. Falling back put "Social jetlag and body mass (BMI)"
-  // and "Sleep problems and childhood adiposity" under a question about
-  // growing taller, because both abstracts mention height as a measurement.
-  // When nothing studies the endpoint, the honest result is the too-broad
-  // notice asking the host for a better query, not a confident wrong answer.
-  const outcomeMatched = outcomeAnchors.length === 0 ? topicRepresentativePool : outcomeInTitle;
+  const outcomeInResults = outcomeAnchors.length > 0
+    ? topicRepresentativePool.filter((paper) => hostOutcomeAnchorHits(outcomeEvidenceText(paper), outcomeAnchors) > 0)
+    : [];
+  const outcomeMatched = outcomeAnchors.length === 0
+    ? topicRepresentativePool
+    : [...outcomeInTitle, ...outcomeInResults.filter((paper) => !outcomeInTitle.includes(paper))];
   // Never trade the endpoint for a paper count. This used to drop the outcome
   // filter whenever fewer than three papers matched it, so "일찍 자면 키가
   // 클까?" came back with sleep-and-myopia and sleep-and-obesity: the topic
@@ -527,12 +533,17 @@ function anchorStem(token: string): string {
 
 function hostTopicAnchorHits(paper: Paper, anchors: string[]): number {
   const text = `${paper.title} ${paper.abstract ?? ""}`.toLowerCase();
+  return anchorHitsInText(text, anchors);
+}
+
+function anchorHitsInText(text: string, anchors: string[]): number {
+  const normalizedText = text.toLowerCase();
   const present = (token: string): boolean =>
-    new RegExp(`\\b${tokenPattern(token)}\\b`, "i").test(text);
+    new RegExp(`\\b${tokenPattern(token)}\\b`, "i").test(normalizedText);
   return anchors.filter((anchor) => {
     const tokens = anchorTokens(anchor);
     if (tokens.length === 0) return false;
-    if (new RegExp(`\\b${tokens.map(tokenPattern).join("\\s+")}\\b`, "i").test(text)) return true;
+    if (new RegExp(`\\b${tokens.map(tokenPattern).join("\\s+")}\\b`, "i").test(normalizedText)) return true;
     if (tokens.length < 2) return false;
     // The host label is often a longer phrase than the literature uses: "red
     // and processed meat" against a paper titled "Processed meat intake and
@@ -544,6 +555,57 @@ function hostTopicAnchorHits(paper: Paper, anchors: string[]): number {
     const qualifiers = tokens.slice(0, -1);
     return qualifiers.filter(present).length >= Math.ceil(qualifiers.length / 2);
   }).length;
+}
+
+type OutcomeConcept = {
+  recognizes: RegExp;
+  appearsAs: RegExp;
+};
+
+// This is deliberately a small vocabulary of common outcome labels, not a
+// general synonym engine. Each group is bounded to measurements that can
+// answer the same consumer question. Topic matching above still has to pass,
+// and matches in abstracts are limited to Results/Conclusions text.
+const outcomeConcepts: OutcomeConcept[] = [
+  {
+    recognizes: /\b(?:weight loss|body weight|weight reduction|weight change)\b/i,
+    appearsAs: /\b(?:weight loss|body weight|weight reduction|weight change|lost (?:body )?weight|weight (?:decreased|declined|was reduced))\b/i
+  },
+  {
+    recognizes: /\b(?:metabolic health|metabolic outcomes?|cardiometabolic health|cardiometabolic outcomes?)\b/i,
+    appearsAs: /\b(?:cardiometabolic|metabolic (?:health|risk|factors?|markers?|profile|parameters?|outcomes?|syndrome)|glyc(?:a?emic)|blood glucose|insulin resistance|lipid profile|cholesterol|triglycerides?)\b/i
+  },
+  {
+    recognizes: /\b(?:safety|tolerability|adverse events?|side effects?)\b/i,
+    appearsAs: /\b(?:safety|tolerability|adverse (?:events?|effects?|reactions?)|side effects?|serious events?|nausea|vomiting|diarrhea|constipation|discontinu(?:ation|ed)|withdr(?:awal|ew))\b/i
+  },
+  {
+    recognizes: /\b(?:glyc(?:a?emic) control|blood glucose|glucose control|hba1c)\b/i,
+    appearsAs: /\b(?:glyc(?:a?emic)|blood glucose|fasting glucose|glucose control|hba1c|insulin resistance)\b/i
+  },
+  {
+    recognizes: /\b(?:lipid profile|blood lipids?|cholesterol|triglycerides?)\b/i,
+    appearsAs: /\b(?:lipid profile|blood lipids?|cholesterol|ldl|hdl|triglycerides?)\b/i
+  },
+  {
+    recognizes: /\b(?:final adult height|adult height|linear growth|growth velocity|height|stature)\b/i,
+    appearsAs: /\b(?:final adult height|adult height|height gain|height velocity|linear growth|growth velocity|stature|statural growth)\b/i
+  }
+];
+
+function hostOutcomeAnchorHits(text: string, anchors: string[]): number {
+  return anchors.filter((anchor) => {
+    if (anchorHitsInText(text, [anchor]) > 0) return true;
+    return outcomeConcepts.some((concept) => concept.recognizes.test(anchor) && concept.appearsAs.test(text));
+  }).length;
+}
+
+function outcomeEvidenceText(paper: Paper): string {
+  const cleanAbstract = decodeAbstractText(paper.abstract ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const resultText = extractLabelledResultSection(cleanAbstract) ?? sourceResultExcerpt(cleanAbstract);
+  return `${paper.title} ${resultText}`;
 }
 
 function escapeRegex(value: string): string {
