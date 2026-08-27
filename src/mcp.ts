@@ -247,7 +247,7 @@ export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string
       "4) '## 대표 논문 N편' — 각 논문마다 연도·연구 유형, 원문 제목, 대상·조건(초록에서 확인될 때만), 결과, 한계, 클릭 가능한 원문 링크를 표시",
       "5) 안전성 결과가 있으면 '## 논문에서 확인된 안전성'",
       "6) '## 연구를 읽을 때' — 대상·측정·추적 기간 차이와 일반화 한계를 설명",
-      "수치와 논문별 차이를 생략하지 말고, 근거에 없는 실천법을 덧붙이거나 '시작한다면' 같은 미완성 문장으로 끝내지 마세요. 대상·조건이나 기간을 초록에서 확인할 수 없으면 추측하지 말고 해당 항목을 생략하세요."
+      "'## 대표 논문 N편' 제목만 쓰고 끝내지 말고, 바로 아래에 반드시 N개의 논문 상세 블록을 모두 작성하세요. 수치와 논문별 차이를 생략하지 말고, 근거에 없는 실천법을 덧붙이거나 '시작한다면' 같은 미완성 문장으로 끝내지 마세요. 대상·조건이나 기간을 초록에서 확인할 수 없으면 추측하지 말고 해당 항목을 생략하세요."
     ].join("\n"),
     // Papers are indexed by ingredient and by scholarly term, so an answer
     // about "마운자로" comes back as findings about tirzepatide. Left
@@ -346,7 +346,11 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
   const exactTitleMatched = exactTopicAnchors.length > 0
     ? exactMatched.filter((paper) => hostTopicAnchorHits({ ...paper, abstract: undefined }, exactTopicAnchors) > 0)
     : exactMatched;
-  const exactRepresentativePool = exactTitleMatched.length >= Math.min(3, exactMatched.length)
+  // If at least one paper names the exact exposure in its title, prefer that
+  // direct evidence even when it yields a shorter list. Falling back to every
+  // abstract mention admitted generic diet/reflux surveys beside a direct
+  // carbonated-water trial and mislabeled them as equally direct evidence.
+  const exactRepresentativePool = exactTitleMatched.length > 0
     ? exactTitleMatched
     : exactMatched;
   // Broader evidence is intentionally title-anchored. A broad review can
@@ -413,7 +417,16 @@ function sourceResultExcerpt(abstract: string | undefined): string {
     .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.sentence
     ?? sentences.at(-1)
     ?? clean;
-  return selected.length > 700 ? `${selected.slice(0, 699).trimEnd()}…` : selected;
+  const labelledConclusion = labelledResults ? extractLabelledConclusionSection(clean) : undefined;
+  const conclusion = labelledConclusion
+    ? splitAbstractSentences(labelledConclusion)
+      .map((sentence, index) => ({ sentence, index, score: abstractResultScore(sentence) }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.sentence
+    : undefined;
+  const excerpt = conclusion && conclusion !== selected
+    ? `${selected} ${conclusion}`
+    : selected;
+  return excerpt.length > 700 ? `${excerpt.slice(0, 699).trimEnd()}…` : excerpt;
 }
 
 function hostEvidencePaperScore(paper: Paper, exactTopicAnchors: string[], parentAnchors: string[]): number {
@@ -461,7 +474,7 @@ function hostEvidenceScope(paper: Paper, evidence: EvidenceSearchResult): HostEv
   const titlePaper = { ...paper, abstract: undefined };
   if (hostTopicAnchorHits(titlePaper, topicAnchors) > 0) return "direct";
   if (hostTopicAnchorHits(titlePaper, parentAnchors) > 0) return "parent";
-  if (hostTopicAnchorHits(paper, topicAnchors) > 0) return "direct";
+  if (anchorHitsInText(outcomeEvidenceText(paper), topicAnchors) > 0) return "direct";
   return "related";
 }
 
@@ -601,6 +614,10 @@ const outcomeConcepts: OutcomeConcept[] = [
   {
     recognizes: /\b(?:final adult height|adult height|linear growth|growth velocity|height|stature)\b/i,
     appearsAs: /\b(?:final adult height|adult height|height gain|height velocity|linear growth|growth velocity|stature|statural growth)\b/i
+  },
+  {
+    recognizes: /\b(?:digestion|digestive function|gastric emptying|dyspepsia|gastro-?oesophageal reflux|gastroesophageal reflux|reflux|gerd)\b/i,
+    appearsAs: /\b(?:digestion|digestive function|gastric emptying|dyspepsia|gastro-?oesophageal reflux|gastroesophageal reflux|reflux symptoms?|gerd)\b/i
   }
 ];
 
@@ -630,6 +647,11 @@ function extractLabelledResultSection(text: string): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+function extractLabelledConclusionSection(text: string): string | undefined {
+  const match = text.match(/\bconclusions?\s*:\s*([\s\S]*?)$/i);
+  return match?.[1]?.trim() || undefined;
+}
+
 function splitAbstractSentences(text: string): string[] {
   return text.split(/(?<=[.!?])(?:["')\]]+)?\s+(?=[A-Z])/)
     .map((sentence) => sentence.trim())
@@ -639,6 +661,7 @@ function splitAbstractSentences(text: string): string[] {
 function abstractResultScore(sentence: string): number {
   const normalized = sentence.toLowerCase();
   let score = 0;
+  if (/^(?:in conclusion|conclusions?)\b/i.test(normalized)) score += 60;
   if (/^(?:aim|objective|purpose|background|introduction|methods?)\b/i.test(normalized)) score -= 80;
   if (hasDirectionalSourceResult(sentence)) score += 30;
   if (/\b\d+(?:[.,]\d+)?\s*(?:%|mm\s*hg|mmhg|bpm|mg|g|kg|ml|l|ci|rr|or|hr)\b/i.test(sentence)) score += 40;
@@ -674,7 +697,7 @@ function hasDirectionalSourceResult(sentence: string): boolean {
  * strong positive result was also retrieved.
  */
 function hasNullSourceResult(sentence: string): boolean {
-  return /\b(?:no (?:significant |clear |consistent )?(?:effect|association|difference|benefit|evidence of)|not (?:significantly )?associated|did not (?:differ|increase|reduce|change|improve)|confidence intervals? (?:included|crossed)|crossed the null|null (?:effect|result)|inconclusive|uncertain(?:ty)? (?:about|regarding|in) the (?:effect|benefit)|certainty of (?:the )?evidence was (?:very )?low)\b/i.test(sentence);
+  return /\b(?:no (?:significant |clear |consistent )?(?:effect|association|difference|benefit|evidence of)|not (?:significantly )?associated|did not (?:alter|differ|increase|reduce|change|improve)|(?:was|were) identical|confidence intervals? (?:included|crossed)|crossed the null|null (?:effect|result)|inconclusive|uncertain(?:ty)? (?:about|regarding|in) the (?:effect|benefit)|certainty of (?:the )?evidence was (?:very )?low)\b/i.test(sentence);
 }
 
 function isAbstractMethodSentence(sentence: string): boolean {

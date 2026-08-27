@@ -58,6 +58,7 @@ describe("MCP evidence package", () => {
     expect(text).toContain("## 이번 판단에 사용한 근거");
     expect(text).toContain("## 연구 결과 한눈에 보기");
     expect(text).toContain("## 대표 논문 N편");
+    expect(text).toContain("바로 아래에 반드시 N개의 논문 상세 블록");
     expect(text).toContain("## 연구를 읽을 때");
     expect(text).toContain("짧은 일반론으로 축약하지 마세요");
   });
@@ -101,6 +102,84 @@ describe("MCP evidence package", () => {
     expect(text).not.toContain("Proton Pump Inhibitors");
     expect(text).not.toContain("Energy drink use in students");
     expect(text).not.toContain("study protocol");
+  });
+
+  it("prefers direct carbonated-drink studies over a survey that only mentions them in the abstract", () => {
+    const evidence: EvidenceSearchResult = {
+      category: "nutrition",
+      queryTerms: ["carbonated beverages digestion gastric emptying dyspepsia reflux"],
+      hostTopicTerms: ["carbonated beverages", "carbonated water", "soft drinks"],
+      hostOutcomeTerms: ["digestion", "gastric emptying", "dyspepsia", "gastroesophageal reflux"],
+      retrievedPaperCount: 3,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [
+        paper({
+          sourceId: "carbonated-dyspepsia",
+          title: "Effects of carbonated water on functional dyspepsia and constipation",
+          evidenceLevel: "clinical_study",
+          abstract: "RESULTS: Dyspepsia scores improved in the carbonated water group compared with the tap water group."
+        }),
+        paper({
+          sourceId: "carbonated-reflux-review",
+          title: "Systematic review: the effects of carbonated beverages on gastro-oesophageal reflux disease",
+          abstract: "RESULTS: Carbonated beverages did not consistently increase gastro-oesophageal reflux symptoms."
+        }),
+        paper({
+          sourceId: "generic-reflux-survey",
+          title: "Differences in Dietary and Lifestyle Triggers between Reflux Disorders",
+          evidenceLevel: "observational_study",
+          abstract: "BACKGROUND: Possible triggers included coffee and carbonated beverages. RESULTS: Diet and lifestyle were associated with reflux symptoms."
+        })
+      ]
+    };
+
+    const text = formatHostEvidenceForMcp(evidence);
+
+    expect(text).toContain("Effects of carbonated water on functional dyspepsia");
+    expect(text).toContain("Systematic review: the effects of carbonated beverages");
+    expect(text).not.toContain("Differences in Dietary and Lifestyle Triggers");
+  });
+
+  it("does not call an abstract-only topic mention direct evidence", () => {
+    const text = formatHostEvidenceForMcp({
+      category: "nutrition",
+      queryTerms: ["carbonated beverages reflux"],
+      hostTopicTerms: ["carbonated beverages"],
+      hostOutcomeTerms: ["reflux"],
+      retrievedPaperCount: 1,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [paper({
+        sourceId: "generic-reflux-survey",
+        title: "Dietary and Lifestyle Triggers in Reflux Disorders",
+        evidenceLevel: "observational_study",
+        abstract: "BACKGROUND: Possible triggers included carbonated beverages. RESULTS: Diet and lifestyle were associated with reflux symptoms."
+      })]
+    });
+
+    expect(text).toContain("주제 관련 근거(정확 일치는 확인되지 않음)");
+    expect(text).not.toContain("- 근거 범위: 직접 주제");
+  });
+
+  it("keeps the primary null conclusion instead of only a quantified secondary gastric result", () => {
+    const text = formatHostEvidenceForMcp({
+      category: "nutrition",
+      queryTerms: ["carbonated water gastric emptying"],
+      hostTopicTerms: ["carbonated water"],
+      hostOutcomeTerms: ["gastric emptying"],
+      retrievedPaperCount: 1,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [paper({
+        sourceId: "gastric-emptying",
+        title: "Effect of carbonated water on gastric emptying and intragastric meal distribution",
+        evidenceLevel: "clinical_study",
+        abstract: "Emptying of both solid and liquid was identical for both drinks. However, the proximal stomach contained a greater proportion of solids (74% vs 56%, P < 0.05). In conclusion, carbonated water did not alter overall gastric emptying but modified intragastric distribution of the meal."
+      })]
+    });
+
+    expect(text).toContain("did not alter overall gastric emptying");
   });
 
   it("keeps exact and explicitly requested parent evidence separate without admitting sibling oils or preprints", () => {

@@ -76,6 +76,7 @@ interface FastEvidenceOptions {
   plannerTimeoutMs?: number;
   searchTimeoutMs?: number;
   searchPlan?: SearchPlan;
+  hostDirectPubMedQuery?: string;
 }
 
 interface FullEvidenceOptions {
@@ -203,6 +204,9 @@ export class ClaimCheckerService {
     const hostParentTerms = normalizeHostEvidenceTerms(input.parentTerms, 3);
     const hostOutcomeTerms = normalizeHostEvidenceTerms(input.outcomeTerms, 4);
     const parentSearchQueries = buildHostParentSearchQueries(hostParentTerms, hostOutcomeTerms);
+    const hostDirectPubMedQuery = hostParentTerms.length === 0
+      ? buildHostDirectPubMedQuery(hostTopicTerms, hostOutcomeTerms)
+      : undefined;
     const initialSearchPlan = buildSuppliedSearchPlan({
       question: input.question,
       category,
@@ -232,6 +236,13 @@ export class ClaimCheckerService {
       {
         planWithAi: false,
         searchPlan,
+        // A host-written academic_query commonly lists every requested
+        // endpoint as whitespace-separated words. PubMed interprets that as
+        // one conjunctive query, so a paper about dyspepsia but not reflux is
+        // silently excluded. Search the structured topic/outcome groups with
+        // OR inside each group while the other indexes keep the host's loose
+        // cross-database query.
+        hostDirectPubMedQuery,
         // Source calls that miss this window are omitted from this response;
         // the host receives the papers that completed in time.
         searchTimeoutMs: 2_400
@@ -1040,7 +1051,7 @@ export class ClaimCheckerService {
     // better first probe than the literal product-name query. The latter often
     // returns product formulation or consumer-preference papers before the
     // reviews that actually report the health result.
-    const focusedQuery = hostParentFocusedQuery ?? broadTopicQuery ?? overviewQuery ?? reviewFocusedQuery ?? searchPlan.searchQueries[0] ?? queries[0] ?? looseQueries[0] ?? input.question;
+    const focusedQuery = options.hostDirectPubMedQuery ?? hostParentFocusedQuery ?? broadTopicQuery ?? overviewQuery ?? reviewFocusedQuery ?? searchPlan.searchQueries[0] ?? queries[0] ?? looseQueries[0] ?? input.question;
     const secondaryFocusedQuery = hostParentFocusedQuery
       // PubMed is the most reliable rapid source for human outcome reviews.
       // When the exact product is sparse, give it the explicit parent query
@@ -1665,6 +1676,26 @@ function buildHostParentSearchQueries(parentTerms: string[], outcomeTerms: strin
     }
   }
   return queries;
+}
+
+export function buildHostDirectPubMedQuery(topicTerms: string[], outcomeTerms: string[]): string | undefined {
+  const topics = pubMedFieldGroup(topicTerms, "Title");
+  if (!topics) return undefined;
+  const outcomes = pubMedFieldGroup(outcomeTerms, "Title/Abstract");
+  return outcomes ? `((${topics}) AND (${outcomes}))` : `(${topics})`;
+}
+
+function pubMedFieldGroup(terms: string[], field: "Title" | "Title/Abstract"): string {
+  return [...new Set(terms
+    .map((term) => term.replace(/["']/g, " ").replace(/\s+/g, " ").trim())
+    .filter((term) => term.length >= 3 && term.length <= 100)
+    .filter((term) => /[a-z]/i.test(term))
+    .flatMap((term) => /\bgastroesophageal reflux\b/i.test(term)
+      ? [term, term.replace(/gastroesophageal/gi, "gastro-oesophageal"), "reflux"]
+      : [term])
+  )]
+    .map((term) => `"${term}"[${field}]`)
+    .join(" OR ");
 }
 
 function looksLikeMedicationIntent(intent: ResearchIntent): boolean {

@@ -3,12 +3,26 @@ import { composeAnswer, formatAnswerForText } from "./answer.js";
 import { buildIntentSearchQueries, buildSearchPlanFromModel } from "./clients/gemini.js";
 import { sourceSentenceNamesSafetyExposure } from "./clients/openai.js";
 import { classifyPaperForIntent, rankPapers } from "./evidence.js";
-import { enrichOutcomeVocabulary, needsBroadNutritionEvidenceLadder, normalizeTopicWideFoodSafetyPlan, rankGroundedPapers } from "./service.js";
+import { buildHostDirectPubMedQuery, enrichOutcomeVocabulary, needsBroadNutritionEvidenceLadder, normalizeTopicWideFoodSafetyPlan, rankGroundedPapers } from "./service.js";
 import type { EvidenceSearchResult, Paper, ResearchIntent } from "./types.js";
 
 const noEvidence = "관련해서 답할 만한 신뢰도 높은 연구를 찾지 못했습니다.";
 
 describe("generic research-answer contract", () => {
+  it("turns host topic and outcome lists into a non-conjunctive PubMed query", () => {
+    const query = buildHostDirectPubMedQuery(
+      ["carbonated beverages", "carbonated water", "soft drinks"],
+      ["digestion", "gastric emptying", "dyspepsia", "gastroesophageal reflux"]
+    );
+
+    expect(query).toContain('"carbonated water"[Title]');
+    expect(query).toContain('"dyspepsia"[Title/Abstract]');
+    expect(query).toContain('"gastro-oesophageal reflux"[Title/Abstract]');
+    expect(query).toContain(" OR ");
+    expect(query).toContain(" AND ");
+    expect(query).not.toContain("systematic review");
+  });
+
   it("uses the planner's intent groups and excludes an unrelated adjacent paper", () => {
     const intent = causalIntent("exposure-alpha", "body weight");
     const ranked = rankPapers([
