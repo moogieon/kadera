@@ -175,4 +175,9 @@ describe("host evidence cache key stability", () => {
     expect(key("semaglutide efficacy")).not.toBe(key("semaglutide safety"));
     expect(key("creatine hair loss")).not.toBe(key("creatine kidney function"));
   });
+
+  it("invalidates cache entries written by the previous retrieval algorithm", () => {
+    expect(key("carbonated beverages digestion gastric emptying dyspepsia reflux systematic review"))
+      .not.toBe("5717923831c3740329c7a99f58b0a3ea2cd95aec0b7ab67ab2fa52740f49fdac");
+  });
 });

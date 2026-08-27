@@ -387,7 +387,10 @@ const searchQueryStopwords = new Set([
  * queries that retrieve the same literature share one entry.
  */
 export function hostEvidenceCacheKey(category: string, searchQueries: string[]): string {
-  const normalized = searchQueries
+  // Keep persistent Railway volume entries from an older retrieval algorithm
+  // from surviving a deploy. Bump this token whenever the source query or
+  // selection contract changes in a way that makes old evidence stale.
+  const normalized = ["host retrieval v2", ...searchQueries]
     .map((query) => (query.toLowerCase().match(/[a-z0-9][a-z0-9-]*/g) ?? [])
       .filter((token) => token.length > 1 && !searchQueryStopwords.has(token))
       .map(singularise)
