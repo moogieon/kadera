@@ -77,6 +77,8 @@ interface FastEvidenceOptions {
   searchTimeoutMs?: number;
   searchPlan?: SearchPlan;
   hostDirectPubMedQuery?: string;
+  hostTopicContextQuery?: string;
+  hostOutcomeContextQuery?: string;
 }
 
 interface FullEvidenceOptions {
@@ -207,6 +209,8 @@ export class ClaimCheckerService {
     const hostDirectPubMedQuery = hostParentTerms.length === 0
       ? buildHostDirectPubMedQuery(hostTopicTerms, hostOutcomeTerms)
       : undefined;
+    const hostTopicContextQuery = buildHostContextEuropePmcQuery(hostTopicTerms);
+    const hostOutcomeContextQuery = buildHostContextEuropePmcQuery(hostOutcomeTerms);
     const initialSearchPlan = buildSuppliedSearchPlan({
       question: input.question,
       category,
@@ -243,6 +247,8 @@ export class ClaimCheckerService {
         // OR inside each group while the other indexes keep the host's loose
         // cross-database query.
         hostDirectPubMedQuery,
+        hostTopicContextQuery,
+        hostOutcomeContextQuery,
         // Source calls that miss this window are omitted from this response;
         // the host receives the papers that completed in time.
         searchTimeoutMs: 2_400
@@ -1032,6 +1038,10 @@ export class ClaimCheckerService {
     );
     const koreanQueries = buildKoreanSearchQueries(input.question, category);
     const hostPlanned = searchPlan.plannedBy === "host";
+    // Host evidence applies its own strict direct/topic-context/outcome-context
+    // lanes after retrieval. Keeping only the generic top ten here lets the
+    // parallel context probes crowd exact PubMed trials out before that gate.
+    const hostCandidateLimit = hostPlanned ? Math.max(40, selectedLimit) : selectedLimit;
     // The first response must establish whether direct evidence exists. Contextual
     // evidence is useful only after that search, never as the primary retrieval path.
     const broadTopicQuery = isBroadTopicQuestion(input.question)
@@ -1093,6 +1103,8 @@ export class ClaimCheckerService {
       comparisonOptionQuery,
       broadTopicReviewQuery,
       hostParentContextQuery,
+      options.hostTopicContextQuery,
+      options.hostOutcomeContextQuery,
       Math.max(500, searchTimeoutMs - 100)
     );
     const results = await Promise.allSettled(
@@ -1132,7 +1144,7 @@ export class ClaimCheckerService {
       claimDirection: searchPlan.claimDirection,
       searchPlannedBy: searchPlan.plannedBy,
       retrievedPaperCount: reportablePapers.length,
-      papers: ensureKoreanCoverage(rankedPapers, reportablePapers, relevanceTerms, selectedLimit),
+      papers: ensureKoreanCoverage(rankedPapers, reportablePapers, relevanceTerms, hostCandidateLimit),
       sourceErrors,
       sourceTraces
     };
@@ -1148,12 +1160,24 @@ export class ClaimCheckerService {
     comparisonOptionQuery?: string,
     broadTopicReviewQuery?: string,
     hostParentContextQuery?: string,
+    hostTopicContextQuery?: string,
+    hostOutcomeContextQuery?: string,
     requestTimeoutMs?: number
   ): Array<{ source: SourceError["source"]; run: () => Promise<Paper[]> }> {
     if (["health", "childcare", "nutrition", "exercise", "psychology"].includes(category)) {
       return [
         { source: "pubmed", run: () => this.pubMed.search(focusedQuery, limit, requestTimeoutMs) },
         { source: "europe_pmc", run: () => this.europePmc.search(secondaryFocusedQuery, limit) },
+        // Sparse exact questions still need a principled evidence ladder. Run
+        // title-anchored topic-only and outcome-only probes in parallel, then
+        // let the MCP renderer expose at most the relevant context lanes with
+        // explicit non-direct labels.
+        ...(hostTopicContextQuery && hostTopicContextQuery !== secondaryFocusedQuery
+          ? [{ source: "europe_pmc" as const, run: () => this.europePmc.search(hostTopicContextQuery, limit) }]
+          : []),
+        ...(hostOutcomeContextQuery && hostOutcomeContextQuery !== secondaryFocusedQuery && hostOutcomeContextQuery !== hostTopicContextQuery
+          ? [{ source: "europe_pmc" as const, run: () => this.europePmc.search(hostOutcomeContextQuery, limit) }]
+          : []),
         // Europe PMC has no shared local request queue, so it is the second
         // independent path for an explicitly requested parent exposure. This
         // prevents a busy PubMed queue from reducing a broad food question to
@@ -1685,17 +1709,33 @@ export function buildHostDirectPubMedQuery(topicTerms: string[], outcomeTerms: s
   return outcomes ? `((${topics}) AND (${outcomes}))` : `(${topics})`;
 }
 
+export function buildHostContextEuropePmcQuery(terms: string[]): string | undefined {
+  const titleTerms = [...new Set(terms
+    .map((term) => term.replace(/["']/g, " ").replace(/\s+/g, " ").trim())
+    .filter((term) => term.length >= 3 && term.length <= 100)
+    .filter((term) => /[a-z]/i.test(term))
+    .flatMap(expandHostSearchTerm)
+  )];
+  if (titleTerms.length === 0) return undefined;
+  const titles = titleTerms.map((term) => `TITLE:\"${term}\"`).join(" OR ");
+  return `(${titles}) AND (PUB_TYPE:\"systematic review\" OR PUB_TYPE:\"randomized controlled trial\" OR PUB_TYPE:\"clinical trial\")`;
+}
+
 function pubMedFieldGroup(terms: string[], field: "Title" | "Title/Abstract"): string {
   return [...new Set(terms
     .map((term) => term.replace(/["']/g, " ").replace(/\s+/g, " ").trim())
     .filter((term) => term.length >= 3 && term.length <= 100)
     .filter((term) => /[a-z]/i.test(term))
-    .flatMap((term) => /\bgastroesophageal reflux\b/i.test(term)
-      ? [term, term.replace(/gastroesophageal/gi, "gastro-oesophageal"), "reflux"]
-      : [term])
+    .flatMap(expandHostSearchTerm)
   )]
     .map((term) => `"${term}"[${field}]`)
     .join(" OR ");
+}
+
+function expandHostSearchTerm(term: string): string[] {
+  return /\bgastroesophageal reflux\b/i.test(term)
+    ? [term, term.replace(/gastroesophageal/gi, "gastro-oesophageal"), "reflux"]
+    : [term];
 }
 
 function looksLikeMedicationIntent(intent: ResearchIntent): boolean {

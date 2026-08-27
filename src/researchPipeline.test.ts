@@ -3,7 +3,7 @@ import { composeAnswer, formatAnswerForText } from "./answer.js";
 import { buildIntentSearchQueries, buildSearchPlanFromModel } from "./clients/gemini.js";
 import { sourceSentenceNamesSafetyExposure } from "./clients/openai.js";
 import { classifyPaperForIntent, rankPapers } from "./evidence.js";
-import { buildHostDirectPubMedQuery, enrichOutcomeVocabulary, needsBroadNutritionEvidenceLadder, normalizeTopicWideFoodSafetyPlan, rankGroundedPapers } from "./service.js";
+import { buildHostContextEuropePmcQuery, buildHostDirectPubMedQuery, enrichOutcomeVocabulary, needsBroadNutritionEvidenceLadder, normalizeTopicWideFoodSafetyPlan, rankGroundedPapers } from "./service.js";
 import type { EvidenceSearchResult, Paper, ResearchIntent } from "./types.js";
 
 const noEvidence = "관련해서 답할 만한 신뢰도 높은 연구를 찾지 못했습니다.";
@@ -21,6 +21,17 @@ describe("generic research-answer contract", () => {
     expect(query).toContain(" OR ");
     expect(query).toContain(" AND ");
     expect(query).not.toContain("systematic review");
+  });
+
+  it("builds title-anchored topic and outcome context searches", () => {
+    const topicQuery = buildHostContextEuropePmcQuery(["carbonated beverages", "carbonated water"]);
+    const outcomeQuery = buildHostContextEuropePmcQuery(["gastric emptying", "gastroesophageal reflux"]);
+
+    expect(topicQuery).toContain('TITLE:"carbonated beverages"');
+    expect(outcomeQuery).toContain('TITLE:"gastric emptying"');
+    expect(outcomeQuery).toContain('TITLE:"gastro-oesophageal reflux"');
+    expect(topicQuery).toContain('PUB_TYPE:"systematic review"');
+    expect(outcomeQuery).toContain('PUB_TYPE:"randomized controlled trial"');
   });
 
   it("uses the planner's intent groups and excludes an unrelated adjacent paper", () => {

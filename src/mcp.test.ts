@@ -152,14 +152,56 @@ describe("MCP evidence package", () => {
       sourceTraces: [],
       papers: [paper({
         sourceId: "generic-reflux-survey",
-        title: "Dietary and Lifestyle Triggers in Reflux Disorders",
-        evidenceLevel: "observational_study",
+        title: "A clinical intervention for reflux symptoms",
+        evidenceLevel: "clinical_study",
         abstract: "BACKGROUND: Possible triggers included carbonated beverages. RESULTS: Diet and lifestyle were associated with reflux symptoms."
       })]
     });
 
-    expect(text).toContain("주제 관련 근거(정확 일치는 확인되지 않음)");
+    expect(text).toContain("질문 결과 보완 근거(질문 대상은 직접 평가하지 않음)");
     expect(text).not.toContain("- 근거 범위: 직접 주제");
+  });
+
+  it("fills a sparse direct result with separate topic-only and outcome-only evidence lanes", () => {
+    const text = formatHostEvidenceForMcp({
+      category: "nutrition",
+      queryTerms: ["carbonated beverages digestion"],
+      hostTopicTerms: ["carbonated beverages", "carbonated water"],
+      hostOutcomeTerms: ["digestion", "gastric emptying", "dyspepsia"],
+      retrievedPaperCount: 4,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [
+        paper({
+          sourceId: "direct",
+          title: "Carbonated water for functional dyspepsia",
+          evidenceLevel: "clinical_study",
+          abstract: "RESULTS: Carbonated water improved dyspepsia scores compared with tap water."
+        }),
+        paper({
+          sourceId: "topic-context",
+          title: "Carbonated beverages and gastrointestinal physiology: a systematic review",
+          abstract: "RESULTS: Carbonated beverages increased several short-term gastrointestinal physiology measures."
+        }),
+        paper({
+          sourceId: "outcome-context",
+          title: "Interventions for functional dyspepsia: a systematic review",
+          abstract: "RESULTS: Several interventions improved dyspepsia symptoms compared with control."
+        }),
+        paper({
+          sourceId: "incidental",
+          title: "Dietary habits in university students: a cross-sectional survey",
+          evidenceLevel: "observational_study",
+          abstract: "BACKGROUND: Carbonated beverages were recorded. RESULTS: Some students reported dyspepsia."
+        })
+      ]
+    });
+
+    expect(text).toContain("Carbonated water for functional dyspepsia");
+    expect(text).toContain("질문 대상 보완 근거(질문한 결과는 직접 평가하지 않음)");
+    expect(text).toContain("질문 결과 보완 근거(질문 대상은 직접 평가하지 않음)");
+    expect(text).toContain("보완 근거를 질문의 대상과 결과를 직접 연결한 증거처럼 쓰지 마세요");
+    expect(text).not.toContain("Dietary habits in university students");
   });
 
   it("keeps the primary null conclusion instead of only a quantified secondary gastric result", () => {
