@@ -179,5 +179,7 @@ describe("host evidence cache key stability", () => {
   it("invalidates cache entries written by the previous retrieval algorithm", () => {
     expect(key("carbonated beverages digestion gastric emptying dyspepsia reflux systematic review"))
       .not.toBe("5717923831c3740329c7a99f58b0a3ea2cd95aec0b7ab67ab2fa52740f49fdac");
+    expect(key("carbonated beverages digestion gastric emptying dyspepsia reflux systematic review"))
+      .not.toBe("30d65a072b023469138bde826ab03f608ce6c798fc96585eb268e35759d1d0a8");
   });
 });

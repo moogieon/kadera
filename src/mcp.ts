@@ -259,6 +259,9 @@ export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string
       ? [`확인된 용어 대응: ${glossary.map((entry) => `${entry.term} = ${entry.askedAs}`).join(" · ")}`]
       : []),
     `이번 조회에서 초록이 있는 후보 ${evidence.retrievedPaperCount ?? papers.length}편 중 대표 논문 ${papers.length}편을 골랐습니다.`,
+    ...(scopes.has("topic_context") || scopes.has("outcome_context")
+      ? ["직접 근거가 부족한 자리는 '질문 대상 자체를 다룬 연구'와 '질문한 결과 자체를 다룬 연구'로만 보완했습니다. 이 보완 근거를 질문의 대상과 결과를 직접 연결한 증거처럼 쓰지 마세요."]
+      : []),
     ...(scopes.has("related")
       ? ["일부 논문은 질문의 정확한 대상과 일치하는지 확인되지 않았습니다. 해당 논문은 참고 근거로만 소개하고 질문에 대한 결론으로 단정하지 마세요."]
       : []),
@@ -340,33 +343,19 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
       : candidates;
   const exactTopicAnchors = hostTopicTerms(evidence);
   const parentAnchors = hostParentTerms(evidence);
-  const exactMatched = exactTopicAnchors.length > 0
-    ? usableCandidates.filter((paper) => hostTopicAnchorHits(paper, exactTopicAnchors) > 0)
-    : usableCandidates;
   const exactTitleMatched = exactTopicAnchors.length > 0
-    ? exactMatched.filter((paper) => hostTopicAnchorHits({ ...paper, abstract: undefined }, exactTopicAnchors) > 0)
-    : exactMatched;
-  // If at least one paper names the exact exposure in its title, prefer that
-  // direct evidence even when it yields a shorter list. Falling back to every
-  // abstract mention admitted generic diet/reflux surveys beside a direct
-  // carbonated-water trial and mislabeled them as equally direct evidence.
-  const exactRepresentativePool = exactTitleMatched.length > 0
-    ? exactTitleMatched
-    : exactMatched;
+    ? usableCandidates.filter((paper) => hostTopicAnchorHits({ ...paper, abstract: undefined }, exactTopicAnchors) > 0)
+    : usableCandidates;
+  const exactResultMatched = exactTopicAnchors.length > 0
+    ? usableCandidates.filter((paper) => anchorHitsInText(outcomeEvidenceText(paper), exactTopicAnchors) > 0)
+    : usableCandidates;
+  const exactFocused = uniqueHostPapers([...exactTitleMatched, ...exactResultMatched]);
   // Broader evidence is intentionally title-anchored. A broad review can
   // mention "saturated fat" in background while studying an unrelated oil;
   // it is useful only when that broader exposure is the paper's real subject.
   const parentTitleMatched = parentAnchors.length > 0
     ? usableCandidates.filter((paper) => hostTopicAnchorHits({ ...paper, abstract: undefined }, parentAnchors) > 0)
     : [];
-  const scopedPapers = uniqueHostPapers([...exactRepresentativePool, ...parentTitleMatched]);
-  // A supplied label that matches nothing is a labelling failure by the host,
-  // not proof that no research exists. Returning an empty set here reported
-  // "no reliable research found" for questions whose evidence had already been
-  // retrieved, simply because the host wrote "processed meats" for a
-  // literature that writes "processed meat". Fall back to the ranked candidate
-  // pool instead; hostEvidenceScope marks those papers as unverified scope.
-  const topicRepresentativePool = scopedPapers.length > 0 ? scopedPapers : usableCandidates;
   const outcomeAnchors = usableAnchors(evidence.hostOutcomeTerms?.map((term) => term.trim()).filter(Boolean) ?? []);
   // Outcome labels are host-written concepts, not guaranteed title phrases.
   // Requiring them verbatim in the title made a carefully-filled call worse
@@ -376,28 +365,53 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
   // "metabolic health". Conversely, searching the whole abstract admits BMI
   // papers for a height question because Methods sections record height to
   // calculate BMI. Match concepts in titles and in result-bearing text only.
-  const outcomeInTitle = outcomeAnchors.length > 0
-    ? topicRepresentativePool.filter((paper) => hostOutcomeAnchorHits(paper.title, outcomeAnchors) > 0)
-    : [];
-  const outcomeInResults = outcomeAnchors.length > 0
-    ? topicRepresentativePool.filter((paper) => hostOutcomeAnchorHits(outcomeEvidenceText(paper), outcomeAnchors) > 0)
-    : [];
-  const outcomeMatched = outcomeAnchors.length === 0
-    ? topicRepresentativePool
-    : [...outcomeInTitle, ...outcomeInResults.filter((paper) => !outcomeInTitle.includes(paper))];
-  // Never trade the endpoint for a paper count. This used to drop the outcome
-  // filter whenever fewer than three papers matched it, so "일찍 자면 키가
-  // 클까?" came back with sleep-and-myopia and sleep-and-obesity: the topic
-  // matched and the question did not. One paper about the right outcome beats
-  // five about the wrong one, and none beats a confident wrong answer.
-  const rankingPool = outcomeAnchors.length > 0
-    ? outcomeMatched
-    : topicRepresentativePool.length > 0
-      ? topicRepresentativePool
-      : usableCandidates;
-  return rankingPool
-    .sort((left, right) => hostEvidencePaperScore(right, exactTopicAnchors, parentAnchors) - hostEvidencePaperScore(left, exactTopicAnchors, parentAnchors))
-    .slice(0, 5);
+  const rank = (papers: Paper[]) => [...papers]
+    .sort((left, right) => hostEvidencePaperScore(right, exactTopicAnchors, parentAnchors) - hostEvidencePaperScore(left, exactTopicAnchors, parentAnchors));
+
+  if (outcomeAnchors.length === 0) {
+    // With no requested endpoint, a topic-centred paper is the direct answer.
+    // Preserve the old label-mismatch fallback so a host-written Korean alias
+    // cannot turn a successfully retrieved review into "no research".
+    return rank(exactFocused.length > 0 ? exactFocused : usableCandidates).slice(0, 5);
+  }
+
+  const outcomeMatches = (paper: Paper) =>
+    hostOutcomeAnchorHits(paper.title, outcomeAnchors) > 0 ||
+    hostOutcomeAnchorHits(outcomeEvidenceText(paper), outcomeAnchors) > 0;
+  const directPapers = rank(exactFocused.filter(outcomeMatches));
+  const parentPapers = rank(parentTitleMatched.filter(outcomeMatches));
+  const isStrongContextEvidence = (paper: Paper) =>
+    paper.evidenceLevel === "systematic_review" ||
+    paper.evidenceLevel === "clinical_study" ||
+    paper.evidenceLevel === "official_guidance";
+  const topicContextPapers = rank(exactTitleMatched.filter((paper) =>
+    !directPapers.includes(paper) && isStrongContextEvidence(paper)
+  ));
+  // Outcome-only context must name the endpoint in the title. Matching a
+  // Methods or background sentence would recreate the unrelated-paper bug.
+  const outcomeContextPapers = rank(usableCandidates.filter((paper) =>
+    !exactFocused.includes(paper) &&
+    !parentTitleMatched.includes(paper) &&
+    isStrongContextEvidence(paper) &&
+    hostOutcomeAnchorHits(paper.title, outcomeAnchors) > 0
+  ));
+
+  const selected = uniqueHostPapers([...directPapers, ...parentPapers]);
+  if (directPapers.length < 2) {
+    const perLaneLimit = directPapers.length === 0 ? 2 : 1;
+    const contextLanes = [
+      topicContextPapers.slice(0, perLaneLimit),
+      outcomeContextPapers.slice(0, perLaneLimit)
+    ];
+    for (let index = 0; selected.length < 5 && contextLanes.some((lane) => index < lane.length); index += 1) {
+      for (const lane of contextLanes) {
+        const paper = lane[index];
+        if (paper && !selected.includes(paper)) selected.push(paper);
+        if (selected.length >= 5) break;
+      }
+    }
+  }
+  return uniqueHostPapers(selected).slice(0, 5);
 }
 
 function hasReportableSourceResult(paper: Paper): boolean {
@@ -463,7 +477,7 @@ function hostParentTerms(evidence: EvidenceSearchResult): string[] {
   return usableAnchors(evidence.hostParentTerms?.map((term) => term.trim()).filter(Boolean) ?? []);
 }
 
-type HostEvidenceScope = "direct" | "parent" | "related";
+type HostEvidenceScope = "direct" | "parent" | "topic_context" | "outcome_context" | "related";
 
 function hostEvidenceScope(paper: Paper, evidence: EvidenceSearchResult): HostEvidenceScope {
   const topicAnchors = hostTopicTerms(evidence);
@@ -472,9 +486,16 @@ function hostEvidenceScope(paper: Paper, evidence: EvidenceSearchResult): HostEv
   // invention. Only an actual anchor hit may be reported as direct evidence.
   if (topicAnchors.length === 0 && parentAnchors.length === 0) return "direct";
   const titlePaper = { ...paper, abstract: undefined };
-  if (hostTopicAnchorHits(titlePaper, topicAnchors) > 0) return "direct";
+  const topicInTitle = hostTopicAnchorHits(titlePaper, topicAnchors) > 0;
+  const topicInResult = anchorHitsInText(outcomeEvidenceText(paper), topicAnchors) > 0;
+  const outcomeAnchors = usableAnchors(evidence.hostOutcomeTerms?.map((term) => term.trim()).filter(Boolean) ?? []);
+  const outcomeMatches = outcomeAnchors.length === 0 ||
+    hostOutcomeAnchorHits(paper.title, outcomeAnchors) > 0 ||
+    hostOutcomeAnchorHits(outcomeEvidenceText(paper), outcomeAnchors) > 0;
+  if ((topicInTitle || topicInResult) && outcomeMatches) return "direct";
   if (hostTopicAnchorHits(titlePaper, parentAnchors) > 0) return "parent";
-  if (anchorHitsInText(outcomeEvidenceText(paper), topicAnchors) > 0) return "direct";
+  if (topicInTitle) return "topic_context";
+  if (outcomeAnchors.length > 0 && hostOutcomeAnchorHits(paper.title, outcomeAnchors) > 0) return "outcome_context";
   return "related";
 }
 
@@ -482,6 +503,8 @@ function hostEvidenceScopeLabel(scope: HostEvidenceScope): string {
   switch (scope) {
     case "direct": return "직접 주제";
     case "parent": return "상위 주제 보완 근거";
+    case "topic_context": return "질문 대상 보완 근거(질문한 결과는 직접 평가하지 않음)";
+    case "outcome_context": return "질문 결과 보완 근거(질문 대상은 직접 평가하지 않음)";
     default: return "주제 관련 근거(정확 일치는 확인되지 않음)";
   }
 }
@@ -701,7 +724,8 @@ function hasNullSourceResult(sentence: string): boolean {
 }
 
 function isAbstractMethodSentence(sentence: string): boolean {
-  return /^(?:we\s+)?(?:conducted|performed|undertook|aimed|sought|evaluated|assessed|investigated|reviewed|summari[sz]ed)\b/i.test(sentence.trim()) &&
+  return (/^(?:we\s+)?(?:conducted|performed|undertook|aimed|sought|evaluated|assessed|investigated|reviewed|summari[sz]ed)\b/i.test(sentence.trim()) ||
+    /\b(?:was|were) administered\b/i.test(sentence)) &&
     !hasDirectionalSourceResult(sentence);
 }
 
