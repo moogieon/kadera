@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
+import type { PaperReferenceRecord } from "./cache.js";
 import { isConsumerHealthEvidenceCandidate } from "./evidence.js";
 import { screenSafety } from "./safety.js";
 import type { ClaimCheckerService } from "./service.js";
@@ -14,6 +15,9 @@ import { categories, type EvidenceLevel, type EvidenceSearchResult, type Paper }
  */
 export const searchPaperEvidenceDescription =
   "Kadera(카더라 말고) checks Korean everyday health rumors against live scholarly papers from PubMed, Europe PMC, OpenAlex and Crossref. Call it whenever the user asks whether something is good, bad, safe, effective, or true about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology, or study methods, even when the user never says paper, research, or evidence. Typical Korean triggers: '소시지 몸에 안 좋아?', '크레아틴 먹으면 탈모 와?', '달걀 하루 두 개 괜찮아?', '간헐적 단식 효과 있어?', '아기한테 영상 보여줘도 돼?', '명상하면 불안 줄어?', '이거 진짜야?', '카더라 아니야?'. Prefer calling it over answering from memory: the user wants verified papers, not recollection. Do not call it for casual chat, creative writing, personal opinions, shopping, or anything involving personal or medical-record data.";
+
+export const getPaperDetailDescription =
+  "Kadera(카더라 말고) opens one paper previously returned by search_paper_evidence. Call it when the user mentions a displayed paper key such as '1234-a 논문 자세히 알려줘', '1234-a 초록 번역해줘', or '1234-a 연구를 깊게 설명해줘'. Pass only that exact key. It returns the saved bibliographic record and the complete available abstract so you can translate it faithfully into Korean and explain the study design, participants, results, and limitations. Do not use it for a new topic search, do not guess a key, and do not claim that an abstract is the full paper.";
 
 export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
   const server = new McpServer({
@@ -61,9 +65,43 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
         parentTerms: parent_terms,
         outcomeTerms: outcome_terms
       });
+      const references = service.savePaperReferences(hostEvidencePapers(evidence));
       return {
-        content: [{ type: "text", text: formatHostEvidenceForMcp(evidence) }],
-        structuredContent: hostEvidenceStructuredContent(evidence)
+        content: [{ type: "text", text: formatHostEvidenceForMcp(evidence, references) }],
+        structuredContent: hostEvidenceStructuredContent(evidence, references)
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_paper_detail",
+    {
+      title: "선택 논문 자세히 보기",
+      description: getPaperDetailDescription,
+      annotations: {
+        title: "논문 상세·한국어 번역",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        paper_id: z.string().min(6).max(10).describe("Paper key shown by Kadera, for example '1234-a'. Keep letters and numbers exactly as displayed; brackets are optional.")
+      }
+    },
+    async ({ paper_id }) => {
+      const reference = service.getPaperReference(paper_id);
+      if (!reference) {
+        const text = [
+          `논문 키 '${paper_id}'를 저장된 검색 결과에서 찾지 못했습니다.`,
+          "키를 추측하거나 다른 논문으로 대체하지 마세요.",
+          "사용자에게 search_paper_evidence로 주제를 다시 검색한 뒤 결과에 표시된 [xxxx-a] 형식의 키를 보내달라고 안내하세요."
+        ].join(" ");
+        return { content: [{ type: "text", text }], isError: true };
+      }
+      return {
+        content: [{ type: "text", text: formatPaperDetailForMcp(reference) }],
+        structuredContent: paperDetailStructuredContent(reference)
       };
     }
   );
@@ -226,7 +264,10 @@ export function untranslatedQueryNotice(academicQuery: string): string | undefin
   ].join(" ");
 }
 
-export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string {
+export function formatHostEvidenceForMcp(
+  evidence: EvidenceSearchResult,
+  references: PaperReferenceRecord[] = []
+): string {
   const papers = hostEvidencePapers(evidence);
   if (papers.length === 0) return noUsableEvidenceNotice(evidence);
 
@@ -239,6 +280,9 @@ export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string
   const lines = [
     "## 카더라 말고(Kadera) 논문 근거",
     "아래는 원문 초록에서 확인한 결과입니다. 최종 답변은 한국어로 쓰되 이 목록에 없는 사실·수치를 추가하지 말고, 기억이나 일반 지식으로 보완하지 마세요. '연관'을 인과관계로 바꾸지 말고, 연구 간 결과가 엇갈리면 그 사실을 밝히고, 원문 링크를 함께 보여주세요.",
+    ...(references.length > 0
+      ? ["각 대표 논문에는 제공된 [1234-a] 형식의 논문 키를 표 첫 열과 상세 제목에 그대로 표시하세요. [1] 같은 새 번호로 바꾸거나 키를 생략하지 마세요. 사용자가 나중에 '1234-a 논문 자세히 알려줘'처럼 말하면 get_paper_detail이 그 논문을 다시 엽니다."]
+      : []),
     [
       "최종 답변은 다음 로컬 Kadera 형식을 유지하고, 짧은 일반론으로 축약하지 마세요:",
       "1) '## 현재 판단' — 반드시 첫 줄을 '**한줄 결론:**'으로 시작하고, 효과가 있는지, 일반적인 대안보다 나은지, 가장 중요한 불확실성이 무엇인지 숫자 없이 평이한 한 문장으로 먼저 답하세요. 그 아래 1~2개 문단에서 대표 연구의 수치와 중요한 예외를 설명",
@@ -266,7 +310,8 @@ export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string
       ? ["일부 논문은 질문의 정확한 대상과 일치하는지 확인되지 않았습니다. 해당 논문은 참고 근거로만 소개하고 질문에 대한 결론으로 단정하지 마세요."]
       : []),
     ...papers.map((paper, index) => [
-      `### ${index + 1}. ${paper.title}`,
+      `### ${index + 1}. ${paperReferenceLabel(references[index])}${paper.title}`,
+      ...(references[index] ? [`- 논문 키: [${references[index].paperId}]`] : []),
       `- 연구 유형: ${evidenceLevelLabel(paper.evidenceLevel)}${paper.year ? ` · ${paper.year}년` : ""}`,
       `- 근거 범위: ${hostEvidenceScopeLabel(hostEvidenceScope(paper, evidence))}`,
       `- 초록 결과: ${sourceResultExcerpt(paper.abstract)}`,
@@ -274,6 +319,36 @@ export function formatHostEvidenceForMcp(evidence: EvidenceSearchResult): string
     ].join("\n"))
   ];
   return lines.join("\n\n");
+}
+
+export function formatPaperDetailForMcp(reference: PaperReferenceRecord): string {
+  const { paperId, paper } = reference;
+  const authors = paper.authors.filter(Boolean).join(", ");
+  return [
+    `## [${paperId}] 논문 상세 자료`,
+    "현재 Kadera가 확보해 저장한 원문 범위는 논문의 초록 전문입니다. 논문 전체 본문을 확보했다고 말하지 마세요.",
+    [
+      "사용자에게 반드시 한국어로 다음 순서로 답하세요:",
+      "1) '한줄 결론' — 이 논문 한 편이 실제로 말하는 바를 평이하게 설명",
+      "2) '초록 전체 번역' — 아래 원문 초록의 모든 문장을 순서대로 빠짐없이 번역하고, BACKGROUND·METHODS·RESULTS·CONCLUSIONS 같은 구획도 한국어로 표시",
+      "3) '연구 설계와 대상' — 초록에 적힌 내용만 정리",
+      "4) '핵심 결과' — 비교 대상, 방향, 효과크기, 신뢰구간 등 초록에 있는 수치를 그대로 보존",
+      "5) '이 논문만으로 말할 수 없는 것' — 초록에서 확인되는 한계와 한 편의 연구를 일반화할 때의 한계를 구분",
+      "6) 클릭 가능한 원문 링크",
+      "번역문을 짧은 요약으로 대체하지 말고, 원문에 없는 대상·방법·수치·결론을 추측하지 마세요. 관찰된 연관성을 인과관계로 바꾸지 마세요."
+    ].join("\n"),
+    "### 서지정보",
+    `- 논문 키: [${paperId}]`,
+    `- 원문 제목: ${paper.title}`,
+    ...(authors ? [`- 저자: ${authors}`] : []),
+    ...(paper.venue ? [`- 학술지: ${paper.venue}`] : []),
+    ...(paper.year ? [`- 연도: ${paper.year}`] : []),
+    `- 연구 유형: ${evidenceLevelLabel(paper.evidenceLevel)}`,
+    ...(paper.doi ? [`- DOI: ${paper.doi}`] : []),
+    `- 원문: ${paper.url}`,
+    "### 번역할 원문 초록",
+    paper.abstract?.trim() || "이 논문은 저장된 초록을 제공하지 않습니다."
+  ].join("\n\n");
 }
 
 /**
@@ -296,7 +371,10 @@ export function noUsableEvidenceNotice(evidence: EvidenceSearchResult): string {
   ].join(" ");
 }
 
-function hostEvidenceStructuredContent(evidence: EvidenceSearchResult) {
+function hostEvidenceStructuredContent(
+  evidence: EvidenceSearchResult,
+  references: PaperReferenceRecord[] = []
+) {
   const papers = hostEvidencePapers(evidence);
   const retrievedPaperCount = evidence.retrievedPaperCount ?? 0;
   return {
@@ -305,7 +383,8 @@ function hostEvidenceStructuredContent(evidence: EvidenceSearchResult) {
     retrieved_paper_count: retrievedPaperCount,
     usable_paper_count: papers.length,
     glossary: (evidence.glossary ?? []).map((entry) => ({ term: entry.term, asked_as: entry.askedAs })),
-    papers: papers.map((paper) => ({
+    papers: papers.map((paper, index) => ({
+      paper_id: references[index]?.paperId,
       title: paper.title,
       year: paper.year,
       evidence_level: paper.evidenceLevel,
@@ -314,6 +393,30 @@ function hostEvidenceStructuredContent(evidence: EvidenceSearchResult) {
       url: paper.url
     }))
   };
+}
+
+function paperDetailStructuredContent(reference: PaperReferenceRecord) {
+  const { paperId, paper } = reference;
+  return {
+    status: "ok",
+    paper_id: paperId,
+    available_text: "abstract",
+    title: paper.title,
+    authors: paper.authors,
+    venue: paper.venue,
+    year: paper.year,
+    doi: paper.doi,
+    source: paper.source,
+    source_id: paper.sourceId,
+    evidence_level: paper.evidenceLevel,
+    publication_types: paper.publicationTypes,
+    abstract_original: paper.abstract,
+    url: paper.url
+  };
+}
+
+function paperReferenceLabel(reference: PaperReferenceRecord | undefined): string {
+  return reference ? `[${reference.paperId}] ` : "";
 }
 
 function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {

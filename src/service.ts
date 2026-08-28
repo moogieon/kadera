@@ -1,5 +1,5 @@
 import type { Config } from "./config.js";
-import { ClaimCache, hostEvidenceCacheKey } from "./cache.js";
+import { ClaimCache, hostEvidenceCacheKey, type PaperReferenceRecord } from "./cache.js";
 import { PubMedClient } from "./clients/pubmed.js";
 import { SemanticScholarClient } from "./clients/semanticScholar.js";
 import { OpenAlexClient } from "./clients/openAlex.js";
@@ -264,6 +264,14 @@ export class ClaimCheckerService {
     // same vocabulary explanation the web answer gets.
     const glossary = nonEmpty(buildMedicationGlossary(input.question));
     return { ...evidence, hostTopicTerms, hostParentTerms, hostOutcomeTerms, glossary };
+  }
+
+  savePaperReferences(papers: Paper[]): PaperReferenceRecord[] {
+    return this.cache.savePaperReferences(papers);
+  }
+
+  getPaperReference(paperId: string): PaperReferenceRecord | undefined {
+    return this.cache.getPaperReference(paperId);
   }
 
   async findEvidence(input: FindEvidenceInput, options: FullEvidenceOptions = {}): Promise<EvidenceSearchResult> {

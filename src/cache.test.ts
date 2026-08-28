@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ClaimCache, hostEvidenceCacheKey } from "./cache.js";
 import { buildClaimSignature } from "./claimSignature.js";
 import { buildQueryTerms, normalizeQuestion } from "./text.js";
-import type { ClaimAnswer, EvidenceSearchResult } from "./types.js";
+import type { ClaimAnswer, EvidenceSearchResult, Paper } from "./types.js";
 
 const tempDirs: string[] = [];
 
@@ -129,6 +129,57 @@ describe("host evidence retrieval cache", () => {
   });
 });
 
+describe("paper references", () => {
+  it("stores a stable short key and resolves bracketed or uppercase input", () => {
+    const { cache } = newCache();
+    const paper = samplePaper({
+      sourceId: "38956175",
+      doi: "10.1016/j.clnu.2024.05.001",
+      title: "Intermittent fasting in adults with diabetes",
+      raw: { providerOnly: "not needed after retrieval" }
+    });
+
+    const first = cache.savePaperReferences([paper]);
+    const second = cache.savePaperReferences([paper]);
+    const paperId = first[0]?.paperId;
+
+    expect(paperId).toMatch(/^\d{4}-[a-z]$/);
+    expect(second[0]?.paperId).toBe(paperId);
+    expect(cache.getPaperReference(`[${paperId?.toUpperCase()}]`)?.paper.title).toBe(paper.title);
+    expect(cache.getPaperReference(paperId!)?.paper.abstract).toBe(paper.abstract);
+    expect(cache.getPaperReference(paperId!)?.paper.raw).toBeNull();
+    cache.close();
+  });
+
+  it("assigns distinct stable keys to distinct papers", () => {
+    const { cache } = newCache();
+    const papers = [
+      samplePaper({ sourceId: "one", title: "First paper" }),
+      samplePaper({ sourceId: "two", title: "Second paper" })
+    ];
+    const references = cache.savePaperReferences(papers);
+    const repeated = cache.savePaperReferences([papers[1]!, papers[0]!]);
+
+    expect(references).toHaveLength(2);
+    expect(references[0]?.paperId).not.toBe(references[1]?.paperId);
+    expect(repeated[0]?.paperId).toBe(references[1]?.paperId);
+    expect(repeated[1]?.paperId).toBe(references[0]?.paperId);
+    cache.close();
+  });
+
+  it("rejects malformed or invented keys", () => {
+    const { cache } = newCache();
+    const known = cache.savePaperReferences([samplePaper({ sourceId: "known" })]);
+    const knownId = known[0]!.paperId;
+    const unusedSuffix = `${knownId.slice(0, -1)}${knownId.endsWith("z") ? "a" : "z"}`;
+
+    expect(cache.getPaperReference("1번 논문")).toBeUndefined();
+    expect(cache.getPaperReference("12345-a")).toBeUndefined();
+    expect(cache.getPaperReference(unusedSuffix)).toBeUndefined();
+    cache.close();
+  });
+});
+
 function newCache(): { cache: ClaimCache; path: string } {
   const dir = mkdtempSync(join(tmpdir(), "kadera-cache-test-"));
   tempDirs.push(dir);
@@ -155,6 +206,22 @@ function sampleAnswer(): ClaimAnswer {
     cached: false,
     category: "health",
     query_terms: ["coffee blood pressure", "coffee hypertension"]
+  };
+}
+
+function samplePaper(overrides: Partial<Paper> = {}): Paper {
+  return {
+    source: "pubmed",
+    sourceId: "paper-1",
+    title: "A systematic review of intermittent fasting",
+    authors: ["Kim A", "Lee B"],
+    year: 2025,
+    url: "https://pubmed.ncbi.nlm.nih.gov/38956175/",
+    evidenceLevel: "systematic_review",
+    publicationTypes: ["Systematic Review", "Meta-Analysis"],
+    abstract: "RESULTS: Intermittent fasting reduced body weight by 1.14 kg compared with control.",
+    raw: {},
+    ...overrides
   };
 }
 
