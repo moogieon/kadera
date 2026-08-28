@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { formatHostEvidenceForMcp, noUsableEvidenceNotice, searchPaperEvidenceDescription, untranslatedQueryNotice } from "./mcp.js";
+import {
+  formatHostEvidenceForMcp,
+  formatPaperDetailForMcp,
+  getPaperDetailDescription,
+  noUsableEvidenceNotice,
+  searchPaperEvidenceDescription,
+  untranslatedQueryNotice
+} from "./mcp.js";
 import type { EvidenceSearchResult, Paper } from "./types.js";
 
 describe("Kakao Tools tool manifest", () => {
   it("keeps the description inside the 1,024-character Kakao Tools limit", () => {
     expect(searchPaperEvidenceDescription.length).toBeLessThanOrEqual(1_024);
+    expect(getPaperDetailDescription.length).toBeLessThanOrEqual(1_024);
   });
 
   it("names the service in English and Korean so the host can attribute it", () => {
@@ -16,6 +24,47 @@ describe("Kakao Tools tool manifest", () => {
     // the Korean trigger utterances that decide whether the tool is called.
     expect(searchPaperEvidenceDescription).not.toMatch(/after the tool returns/i);
     expect(searchPaperEvidenceDescription).not.toMatch(/academic_query/);
+  });
+});
+
+describe("paper follow-up flow", () => {
+  it("prints persistent paper keys in the search package and tells the host to preserve them", () => {
+    const selected = paper({
+      sourceId: "fasting-key",
+      title: "Intermittent fasting and body weight: a systematic review",
+      abstract: "RESULTS: Intermittent fasting reduced body weight by 1.29 kg."
+    });
+    const text = formatHostEvidenceForMcp({
+      category: "nutrition",
+      queryTerms: ["intermittent fasting weight loss"],
+      hostTopicTerms: ["intermittent fasting"],
+      retrievedPaperCount: 1,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [selected]
+    }, [{ paperId: "1234-a", paper: selected }]);
+
+    expect(text).toContain("[1234-a]");
+    expect(text).toContain("논문 키: [1234-a]");
+    expect(text).toContain("get_paper_detail");
+    expect(text).toContain("[1] 같은 새 번호로 바꾸거나 키를 생략하지 마세요");
+  });
+
+  it("provides the complete stored abstract for faithful Korean translation without claiming full text", () => {
+    const stored = paper({
+      sourceId: "fasting-detail",
+      title: "Intermittent fasting and cardiometabolic health",
+      authors: ["Kim A", "Lee B"],
+      doi: "10.1000/example",
+      abstract: "BACKGROUND: Evidence remains uncertain. METHODS: We reviewed 14 trials. RESULTS: Body weight decreased by 1.14 kg. CONCLUSIONS: Effects varied by protocol."
+    });
+    const text = formatPaperDetailForMcp({ paperId: "1234-a", paper: stored });
+
+    expect(text).toContain("현재 Kadera가 확보해 저장한 원문 범위는 논문의 초록 전문");
+    expect(text).toContain("초록 전체 번역");
+    expect(text).toContain(stored.abstract);
+    expect(text).toContain("논문 전체 본문을 확보했다고 말하지 마세요");
+    expect(text).toContain("https://pubmed.ncbi.nlm.nih.gov/1/");
   });
 });
 

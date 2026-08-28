@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { signatureSimilarity, type ClaimSignature } from "./claimSignature.js";
-import type { ClaimAnswer, EvidenceSearchResult, PopularClaim } from "./types.js";
+import type { ClaimAnswer, EvidenceSearchResult, Paper, PopularClaim } from "./types.js";
 
 const answerFormatVersion = "research_story_v91";
 // Bump when the shape of a stored retrieval changes, so a deploy cannot serve
@@ -24,6 +24,11 @@ interface CacheRow {
   category: ClaimSignature["category"];
   direction: ClaimSignature["direction"];
   numeric_signature: string;
+}
+
+export interface PaperReferenceRecord {
+  paperId: string;
+  paper: Paper;
 }
 
 export class ClaimCache {
@@ -198,6 +203,73 @@ export class ClaimCache {
   }
 
   /**
+   * Give every canonical paper a short, persistent key. Users can copy a
+   * reference such as "1234-a" into a later message without resending a DOI or
+   * title. The DOI/source identity makes the same paper keep the same key even
+   * when it appears in a different search, and collisions probe the remaining
+   * 260,000-key namespace instead of overwriting another paper.
+   */
+  savePaperReferences(papers: Paper[], now = new Date()): PaperReferenceRecord[] {
+    const uniquePapers: Array<{ paper: Paper; canonicalKey: string }> = [];
+    const seen = new Set<string>();
+    for (const paper of papers.slice(0, 26)) {
+      const canonicalKey = canonicalPaperKey(paper);
+      if (seen.has(canonicalKey)) continue;
+      seen.add(canonicalKey);
+      uniquePapers.push({ paper, canonicalKey });
+    }
+    if (uniquePapers.length === 0) return [];
+
+    const createdAt = now.toISOString();
+    const references: PaperReferenceRecord[] = [];
+
+    this.db.exec("BEGIN");
+    try {
+      const statement = this.db.prepare(
+        `INSERT INTO paper_references_v2
+          (paper_id, canonical_key, paper_json, created_at, last_accessed_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(canonical_key) DO UPDATE SET
+           paper_json = excluded.paper_json,
+           last_accessed_at = excluded.last_accessed_at`
+      );
+      for (const { paper, canonicalKey } of uniquePapers) {
+        const existing = this.db
+          .prepare("SELECT paper_id FROM paper_references_v2 WHERE canonical_key = ? LIMIT 1")
+          .get(canonicalKey) as { paper_id: string } | undefined;
+        const paperId = existing?.paper_id ?? this.allocatePaperReferenceId(canonicalKey);
+        statement.run(
+          paperId,
+          canonicalKey,
+          JSON.stringify(storablePaper(paper)),
+          createdAt,
+          createdAt
+        );
+        references.push({ paperId, paper });
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    return references;
+  }
+
+  getPaperReference(input: string, now = new Date()): PaperReferenceRecord | undefined {
+    const paperId = normalizePaperReferenceId(input);
+    if (!paperId) return undefined;
+    const row = this.db
+      .prepare("SELECT paper_json FROM paper_references_v2 WHERE paper_id = ? LIMIT 1")
+      .get(paperId) as { paper_json: string } | undefined;
+    if (!row) return undefined;
+    this.db
+      .prepare("UPDATE paper_references_v2 SET last_accessed_at = ? WHERE paper_id = ?")
+      .run(now.toISOString(), paperId);
+    return { paperId, paper: JSON.parse(row.paper_json) as Paper };
+  }
+
+  /**
    * A retrieval plan is a pure function of the question, but the planner is a
    * language model and answers differently every call: five runs of "계란 하루
    * 몇개까지 ㄱㅊ?" produced five different term sets, swinging the candidate
@@ -282,6 +354,22 @@ export class ClaimCache {
     return { ...answer, claim_id: row.claim_id, cached: true };
   }
 
+  private allocatePaperReferenceId(canonicalKey: string): string {
+    const namespaceSize = 10_000 * 26;
+    const fingerprint = createHash("sha256").update(canonicalKey).digest("hex");
+    const start = Number.parseInt(fingerprint.slice(0, 8), 16) % namespaceSize;
+    const lookup = this.db.prepare(
+      "SELECT canonical_key FROM paper_references_v2 WHERE paper_id = ? LIMIT 1"
+    );
+    for (let offset = 0; offset < namespaceSize; offset += 1) {
+      const value = (start + offset) % namespaceSize;
+      const paperId = `${Math.floor(value / 26).toString().padStart(4, "0")}-${String.fromCharCode(97 + (value % 26))}`;
+      const occupied = lookup.get(paperId) as { canonical_key: string } | undefined;
+      if (!occupied || occupied.canonical_key === canonicalKey) return paperId;
+    }
+    throw new Error("논문 참조 키 공간이 가득 찼습니다.");
+  }
+
   private migrate(): void {
     this.db.exec(`
       DROP TABLE IF EXISTS claim_cache;
@@ -339,6 +427,17 @@ export class ClaimCache {
       CREATE INDEX IF NOT EXISTS host_evidence_cache_v1_expires
         ON host_evidence_cache_v1 (expires_at);
 
+      CREATE TABLE IF NOT EXISTS paper_references_v2 (
+        paper_id TEXT PRIMARY KEY,
+        canonical_key TEXT NOT NULL UNIQUE,
+        paper_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_accessed_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS paper_references_v2_accessed
+        ON paper_references_v2 (last_accessed_at);
+
       CREATE TABLE IF NOT EXISTS anonymous_claim_stats_v2 (
         topic_key TEXT NOT NULL,
         category TEXT NOT NULL,
@@ -353,6 +452,26 @@ export class ClaimCache {
       this.db.exec("ALTER TABLE claim_cache_v2 ADD COLUMN format_version TEXT NOT NULL DEFAULT 'legacy'");
     }
   }
+}
+
+export function normalizePaperReferenceId(input: string): string | undefined {
+  const normalized = input.trim().toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  return /^\d{4}-[a-z]$/.test(normalized) ? normalized : undefined;
+}
+
+function canonicalPaperKey(paper: Paper): string {
+  const doi = paper.doi
+    ?.trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//, "")
+    .replace(/^doi:\s*/, "");
+  if (doi) return `doi:${doi}`;
+  if (paper.sourceId?.trim()) return `${paper.source}:${paper.sourceId.trim().toLowerCase()}`;
+  return `title:${paper.title.trim().toLowerCase()}|${paper.year ?? ""}`;
+}
+
+function storablePaper(paper: Paper): Paper {
+  return { ...paper, raw: null };
 }
 
 /** Only a hash of the question is stored, never the question itself. */

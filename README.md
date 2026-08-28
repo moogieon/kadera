@@ -6,11 +6,9 @@
 
 ## 기능
 
-- `check_claim`: 한국어 질문을 받아 연구 문헌 기반 답변을 반환
-- `find_evidence`: 답변 생성 없이 PubMed/Semantic Scholar 검색 결과 반환
-- `popular_claims`: 개인정보 없이 익명 집계된 반복 질문 반환
-- `data_sources`: 기획서 4장 API별 구현/활성/키 필요 상태 반환
-- `runtime_status`: Gemini RAG 활성 여부와 공개 가능한 보안/캐시 상태 반환
+- `search_paper_evidence`: 한국어 건강·생활 질문을 받아 실제 논문 근거와 원문 링크를 반환하고, 대표 논문마다 `[1234-a]` 같은 후속 조회 키를 표시
+- `get_paper_detail`: 검색 결과에 표시된 논문 키로 저장된 서지정보와 초록 전문을 다시 열어 한국어 전체 번역·상세 설명에 사용
+- `find_evidence`, `popular_claims`, `data_sources`, `runtime_status`: 운영 진단 설정을 켰을 때만 노출되는 내부 도구
 
 ## 안전 원칙
 
@@ -18,6 +16,7 @@
 - 검색 결과가 없으면 `insufficient_evidence`를 반환합니다.
 - 응급, 진단, 처방, 복용량, 약물 병용 질문은 `safety_redirect`로 전문가 상담을 우선합니다.
 - 개인별 질문 이력은 저장하지 않습니다. 캐시와 익명 주제 집계만 저장합니다.
+- 후속 논문 조회를 위해 공개 서지정보와 초록을 논문 키에 연결해 저장하며, 외부 제공자의 원본 응답 객체와 사용자 질문은 함께 저장하지 않습니다.
 
 ## 요구사항
 
