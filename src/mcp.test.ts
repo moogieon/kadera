@@ -48,6 +48,12 @@ describe("paper follow-up flow", () => {
     expect(text).toContain("논문 키: [1234-a]");
     expect(text).toContain("get_paper_detail");
     expect(text).toContain("[1] 같은 새 번호로 바꾸거나 키를 생략하지 마세요");
+    expect(text).toContain("최종 답변에는 한국어 제목만 표시");
+    expect(text).toContain("링크 문구는 모두 '원문 보기'로 통일");
+    expect(text).not.toContain("### 1. [1234-a] Intermittent fasting");
+    expect(text).toContain("## 논문을 더 자세히 보고 싶다면");
+    expect(text).toContain("“1234-a 논문 자세히 알려줘”");
+    expect(text).toContain("초록 전체 번역, 연구 설계와 대상, 주요 수치");
   });
 
   it("provides the complete stored abstract for faithful Korean translation without claiming full text", () => {
@@ -64,6 +70,9 @@ describe("paper follow-up flow", () => {
     expect(text).toContain("초록 전체 번역");
     expect(text).toContain(stored.abstract);
     expect(text).toContain("논문 전체 본문을 확보했다고 말하지 마세요");
+    expect(text).toContain("영문 원제와 PubMed·Europe PMC 같은 데이터베이스 이름은 사용자가 요청하지 않는 한 노출하지 마세요");
+    expect(text).toContain("최종 답변에는 한국어 제목만 표시");
+    expect(text).toContain("답변 마지막 줄은 반드시 '[원문 보기](https://pubmed.ncbi.nlm.nih.gov/1/)' 링크로 끝내세요");
     expect(text).toContain("https://pubmed.ncbi.nlm.nih.gov/1/");
   });
 });

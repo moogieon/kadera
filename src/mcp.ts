@@ -277,9 +277,14 @@ export function formatHostEvidenceForMcp(
   // moment the answer is written.
   const scopes = new Set(papers.map((paper) => hostEvidenceScope(paper, evidence)));
   const glossary = evidence.glossary ?? [];
+  const followUpExamples = references.slice(0, 2).map((reference, index) =>
+    index === 0
+      ? `- “${reference.paperId} 논문 자세히 알려줘”`
+      : `- “${reference.paperId} 초록 전체를 한국어로 번역해줘”`
+  );
   const lines = [
     "## 카더라 말고(Kadera) 논문 근거",
-    "아래는 원문 초록에서 확인한 결과입니다. 최종 답변은 한국어로 쓰되 이 목록에 없는 사실·수치를 추가하지 말고, 기억이나 일반 지식으로 보완하지 마세요. '연관'을 인과관계로 바꾸지 말고, 연구 간 결과가 엇갈리면 그 사실을 밝히고, 원문 링크를 함께 보여주세요.",
+    "아래는 원문 초록에서 확인한 결과입니다. 최종 답변의 제목·표·설명·논문명은 모두 자연스러운 한국어로 쓰세요. 영문 논문 제목과 PubMed·Europe PMC 같은 데이터베이스 이름은 사용자가 요청하지 않는 한 본문에 노출하지 말고, 링크 문구는 모두 '원문 보기'로 통일하세요. LDL·HbA1c처럼 통용되는 의학 약어와 수치 단위만 원문 표기를 유지하세요. 이 목록에 없는 사실·수치를 추가하거나 기억·일반 지식으로 보완하지 마세요. '연관'을 인과관계로 바꾸지 말고, 연구 간 결과가 엇갈리면 그 사실을 밝히세요.",
     ...(references.length > 0
       ? ["각 대표 논문에는 제공된 [1234-a] 형식의 논문 키를 표 첫 열과 상세 제목에 그대로 표시하세요. [1] 같은 새 번호로 바꾸거나 키를 생략하지 마세요. 사용자가 나중에 '1234-a 논문 자세히 알려줘'처럼 말하면 get_paper_detail이 그 논문을 다시 엽니다."]
       : []),
@@ -288,11 +293,23 @@ export function formatHostEvidenceForMcp(
       "1) '## 현재 판단' — 반드시 첫 줄을 '**한줄 결론:**'으로 시작하고, 효과가 있는지, 일반적인 대안보다 나은지, 가장 중요한 불확실성이 무엇인지 숫자 없이 평이한 한 문장으로 먼저 답하세요. 그 아래 1~2개 문단에서 대표 연구의 수치와 중요한 예외를 설명",
       "2) '## 이번 판단에 사용한 근거' — 조회한 후보 문헌 수와 대표 논문 수를 명시",
       "3) '## 연구 결과 한눈에 보기' — '연구 | 핵심 결과' 2열 표로 대표 논문을 모두 비교",
-      "4) '## 대표 논문 N편' — 각 논문마다 연도·연구 유형, 원문 제목, 대상·조건(초록에서 확인될 때만), 결과, 한계, 클릭 가능한 원문 링크를 표시",
+      "4) '## 대표 논문 N편' — 각 논문마다 논문 제목을 한국어로 번역해 표시하고, 연도·연구 유형, 대상·조건(초록에서 확인될 때만), 결과, 한계, '[원문 보기](URL)' 링크를 표시. 영문 원제는 사용자가 요청할 때만 표시",
       "5) 안전성 결과가 있으면 '## 논문에서 확인된 안전성'",
       "6) '## 연구를 읽을 때' — 대상·측정·추적 기간 차이와 일반화 한계를 설명",
+      ...(followUpExamples.length > 0
+        ? ["7) 맨 마지막에 '## 논문을 더 자세히 보고 싶다면' — 실제 논문 키를 넣은 후속 질문 예시와 상세조회에서 제공되는 내용을 안내"]
+        : []),
       "'## 대표 논문 N편' 제목만 쓰고 끝내지 말고, 바로 아래에 반드시 N개의 논문 상세 블록을 모두 작성하세요. 수치와 논문별 차이를 생략하지 말고, 근거에 없는 실천법을 덧붙이거나 '시작한다면' 같은 미완성 문장으로 끝내지 마세요. 대상·조건이나 기간을 초록에서 확인할 수 없으면 추측하지 말고 해당 항목을 생략하세요."
     ].join("\n"),
+    ...(followUpExamples.length > 0
+      ? [[
+          "최종 답변 맨 끝에 아래 안내를 실제 논문 키와 함께 그대로 포함하세요:",
+          "## 논문을 더 자세히 보고 싶다면",
+          "궁금한 논문 키를 골라 이렇게 물어보세요.",
+          ...followUpExamples,
+          "해당 논문의 초록 전체 번역, 연구 설계와 대상, 주요 수치, 해석할 때의 한계를 자세히 확인할 수 있습니다."
+        ].join("\n")]
+      : []),
     // Papers are indexed by ingredient and by scholarly term, so an answer
     // about "마운자로" comes back as findings about tirzepatide. Left
     // unexplained the reader cannot tell which number is about what they
@@ -310,12 +327,13 @@ export function formatHostEvidenceForMcp(
       ? ["일부 논문은 질문의 정확한 대상과 일치하는지 확인되지 않았습니다. 해당 논문은 참고 근거로만 소개하고 질문에 대한 결론으로 단정하지 마세요."]
       : []),
     ...papers.map((paper, index) => [
-      `### ${index + 1}. ${paperReferenceLabel(references[index])}${paper.title}`,
+      `### ${index + 1}. ${paperReferenceLabel(references[index])}번역 대상 논문`,
       ...(references[index] ? [`- 논문 키: [${references[index].paperId}]`] : []),
+      `- 번역할 영문 제목(최종 답변에는 한국어 제목만 표시): ${paper.title}`,
       `- 연구 유형: ${evidenceLevelLabel(paper.evidenceLevel)}${paper.year ? ` · ${paper.year}년` : ""}`,
       `- 근거 범위: ${hostEvidenceScopeLabel(hostEvidenceScope(paper, evidence))}`,
       `- 초록 결과: ${sourceResultExcerpt(paper.abstract)}`,
-      `- 원문: ${paper.url}`
+      `- 원문 보기 링크: ${paper.url}`
     ].join("\n"))
   ];
   return lines.join("\n\n");
@@ -334,18 +352,19 @@ export function formatPaperDetailForMcp(reference: PaperReferenceRecord): string
       "3) '연구 설계와 대상' — 초록에 적힌 내용만 정리",
       "4) '핵심 결과' — 비교 대상, 방향, 효과크기, 신뢰구간 등 초록에 있는 수치를 그대로 보존",
       "5) '이 논문만으로 말할 수 없는 것' — 초록에서 확인되는 한계와 한 편의 연구를 일반화할 때의 한계를 구분",
-      "6) 클릭 가능한 원문 링크",
-      "번역문을 짧은 요약으로 대체하지 말고, 원문에 없는 대상·방법·수치·결론을 추측하지 마세요. 관찰된 연관성을 인과관계로 바꾸지 마세요."
+      "6) '[원문 보기](URL)' 형식의 클릭 가능한 링크",
+      `답변 마지막 줄은 반드시 '[원문 보기](${paper.url})' 링크로 끝내세요. '원문 링크'라는 제목만 쓰고 URL을 생략하지 마세요.`,
+      "답변의 논문 제목과 모든 설명은 자연스러운 한국어로 쓰고, 영문 원제와 PubMed·Europe PMC 같은 데이터베이스 이름은 사용자가 요청하지 않는 한 노출하지 마세요. LDL·HbA1c처럼 통용되는 의학 약어와 수치 단위만 원문 표기를 유지하세요. 번역문을 짧은 요약으로 대체하지 말고, 원문에 없는 대상·방법·수치·결론을 추측하지 마세요. 관찰된 연관성을 인과관계로 바꾸지 마세요."
     ].join("\n"),
     "### 서지정보",
     `- 논문 키: [${paperId}]`,
-    `- 원문 제목: ${paper.title}`,
+    `- 번역할 영문 제목(최종 답변에는 한국어 제목만 표시): ${paper.title}`,
     ...(authors ? [`- 저자: ${authors}`] : []),
     ...(paper.venue ? [`- 학술지: ${paper.venue}`] : []),
     ...(paper.year ? [`- 연도: ${paper.year}`] : []),
     `- 연구 유형: ${evidenceLevelLabel(paper.evidenceLevel)}`,
     ...(paper.doi ? [`- DOI: ${paper.doi}`] : []),
-    `- 원문: ${paper.url}`,
+    `- 원문 보기 링크: ${paper.url}`,
     "### 번역할 원문 초록",
     paper.abstract?.trim() || "이 논문은 저장된 초록을 제공하지 않습니다."
   ].join("\n\n");
