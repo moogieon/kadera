@@ -17,7 +17,7 @@ import { RissClient } from "./clients/riss.js";
 import { OsfPreprintsClient } from "./clients/osfPreprints.js";
 import { koreanBrandSearchTerms, resolveKoreanBrandAliases, RxNavClient } from "./clients/rxnav.js";
 import { buildIntentSearchQueries, type SearchPlan } from "./clients/gemini.js";
-import { OpenAiRagClient } from "./clients/openai.js";
+import { OpenAiRagClient, type FastHostQueryPlan } from "./clients/openai.js";
 import { composeAnswer, hasGroundedFindingForIntent } from "./answer.js";
 import { classifyPaperForIntent, comparisonEvidenceScope, evidenceDirectness, normalizeEvidenceLevel, rankPapers } from "./evidence.js";
 import { screenSafety, screenUnsupportedResearchQuestion, standardSafetyNote } from "./safety.js";
@@ -105,6 +105,7 @@ export interface ModelComparisonResult {
 
 export class ClaimCheckerService {
   private readonly cache: ClaimCache;
+  private readonly hostQuestionPlans = new Map<string, { plan: FastHostQueryPlan; expiresAt: number }>();
   private readonly pubMed: PubMedClient;
   private readonly semanticScholar: SemanticScholarClient;
   private readonly openAlex: OpenAlexClient;
@@ -254,16 +255,36 @@ export class ClaimCheckerService {
         searchTimeoutMs: 2_400
       }
     );
+    const labelledEvidence: EvidenceSearchResult = {
+      ...evidence,
+      hostTopicTerms,
+      hostParentTerms,
+      hostOutcomeTerms
+    };
     // Never store a degraded retrieval. Caching a run whose sources timed out
     // would pin "관련 연구를 찾지 못했습니다" for the whole TTL on a topic that
     // has evidence.
-    if (!cached && ttlMs > 0 && isCacheableHostEvidence(evidence)) {
+    if (!cached && ttlMs > 0 && isCacheableHostEvidence(labelledEvidence)) {
       this.cache.saveHostEvidence(cacheKey, evidence, ttlMs);
     }
     // The brand table is an offline lookup, so the MCP path can afford the
     // same vocabulary explanation the web answer gets.
     const glossary = nonEmpty(buildMedicationGlossary(input.question));
-    return { ...evidence, hostTopicTerms, hostParentTerms, hostOutcomeTerms, glossary };
+    return { ...labelledEvidence, glossary };
+  }
+
+  async findQuestionEvidence(question: string): Promise<EvidenceSearchResult | undefined> {
+    const planned = await this.planHostQuery(question);
+    if (!planned) return undefined;
+    const evidence = await this.findHostEvidence({ question, ...planned });
+    const ttlMs = this.config.searchPlanCacheTtlMs;
+    if (ttlMs > 0 && isCacheableHostEvidence(evidence)) {
+      this.hostQuestionPlans.set(normalizeQuestion(question), {
+        plan: planned,
+        expiresAt: Date.now() + ttlMs
+      });
+    }
+    return evidence;
   }
 
   savePaperReferences(papers: Paper[]): PaperReferenceRecord[] {
@@ -1294,11 +1315,25 @@ export class ClaimCheckerService {
    * asks. Only used offline by the prewarm script, where the planner's latency
    * does not count against Kakao's tool-latency budget.
    */
-  async planHostQuery(question: string): Promise<{ academicQuery: string; category: Exclude<Category, "auto"> } | undefined> {
+  async planHostQuery(question: string): Promise<FastHostQueryPlan | undefined> {
     const fallbackCategory = classifyCategory(question, "auto");
+    const cacheKey = normalizeQuestion(question);
+    const cached = this.hostQuestionPlans.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.plan;
+    if (cached) this.hostQuestionPlans.delete(cacheKey);
+    if (this.openai.enabled) {
+      const fast = await this.openai.planHostQueryFast(question, fallbackCategory).catch(() => undefined);
+      if (fast) return fast;
+    }
     const plan = await this.planSearch(question, fallbackCategory, buildQueryTerms(question, fallbackCategory));
     const academicQuery = plan.searchQueries.find((query) => /[a-z]{3}/i.test(query))?.trim();
-    return academicQuery ? { academicQuery, category: plan.category } : undefined;
+    if (!academicQuery) return undefined;
+    return {
+      academicQuery,
+      category: plan.category,
+      topicTerms: plan.intent?.exposureTerms.slice(0, 4) ?? [],
+      outcomeTerms: plan.intent?.outcomeTerms.slice(0, 4) ?? []
+    };
   }
 
   private async planSearch(
@@ -2805,7 +2840,31 @@ function buildMedicationGlossary(question: string): GlossaryEntry[] {
  */
 function isCacheableHostEvidence(evidence: EvidenceSearchResult): boolean {
   const fulfilled = evidence.sourceTraces.filter((trace) => trace.status === "fulfilled").length;
-  return evidence.papers.length >= 3 && fulfilled >= 2 && fulfilled > evidence.sourceErrors.length;
+  return evidence.papers.length >= 3 &&
+    fulfilled >= 2 &&
+    fulfilled > evidence.sourceErrors.length &&
+    hasDirectHostAnchorMatch(evidence);
+}
+
+function hasDirectHostAnchorMatch(evidence: EvidenceSearchResult): boolean {
+  const topics = normalizeHostEvidenceTerms(evidence.hostTopicTerms, 4).map(normalizeAnchorText);
+  const outcomes = normalizeHostEvidenceTerms(evidence.hostOutcomeTerms, 4).map(normalizeAnchorText);
+  if (topics.length === 0) return true;
+  return evidence.papers.some((paper) => {
+    const text = normalizeAnchorText([
+      paper.title,
+      paper.abstract ?? "",
+      paper.groundedFindingKo ?? "",
+      paper.groundedSourceSentence ?? ""
+    ].join(" "));
+    const topicHit = topics.some((term) => text.includes(term));
+    const outcomeHit = outcomes.length === 0 || outcomes.some((term) => text.includes(term));
+    return topicHit && outcomeHit;
+  });
+}
+
+function normalizeAnchorText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9가-힣]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {

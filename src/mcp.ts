@@ -39,7 +39,7 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
       },
       inputSchema: {
         question: z.string().min(2).max(350).describe("The user's question in Korean, with personal and medical-record details removed."),
-        academic_query: z.string().min(3).max(450).describe("Required. One English scholarly search query. Example: 'energy drink blood pressure systematic review'."),
+        academic_query: z.string().min(3).max(450).optional().describe("Optional compatibility field. If omitted, Kadera creates the English scholarly query internally."),
         topic_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the exact item asked about, plus true synonyms. Example: ['energy drink']."),
         parent_terms: z.array(z.string().min(2).max(100)).min(1).max(3).optional().describe("Broader English exposure, only when the exact item has little direct research. Example for lard: ['saturated fat']."),
         outcome_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the outcome asked about. Example: ['blood pressure'].")
@@ -56,15 +56,24 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
       // Korean question into academic_query the search returns nothing, and
       // the user is told no research exists on a topic that has plenty. Ask
       // the host to retry in English instead of reporting a false negative.
-      const retryNotice = untranslatedQueryNotice(academic_query);
+      const retryNotice = academic_query ? untranslatedQueryNotice(academic_query) : undefined;
       if (retryNotice) return { content: [{ type: "text", text: retryNotice }], isError: true };
-      const evidence = await service.findHostEvidence({
+      const evidence = await findMcpEvidence(service, {
         question,
         academicQuery: academic_query,
         topicTerms: topic_terms,
         parentTerms: parent_terms,
         outcomeTerms: outcome_terms
       });
+      if (!evidence) {
+        return {
+          content: [{
+            type: "text",
+            text: "카더라 말고가 질문을 영어 학술 검색어로 변환하지 못했습니다. 관련 연구가 없다고 답하지 말고, 잠시 후 같은 질문으로 다시 호출하세요."
+          }],
+          isError: true
+        };
+      }
       const references = service.savePaperReferences(hostEvidencePapers(evidence));
       return {
         content: [{ type: "text", text: formatHostEvidenceForMcp(evidence, references) }],
@@ -210,6 +219,29 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
   }
 
   return server;
+}
+
+interface McpSearchInput {
+  question: string;
+  academicQuery?: string;
+  topicTerms?: string[];
+  parentTerms?: string[];
+  outcomeTerms?: string[];
+}
+
+export async function findMcpEvidence(
+  service: Pick<ClaimCheckerService, "findQuestionEvidence" | "findHostEvidence">,
+  input: McpSearchInput
+): Promise<EvidenceSearchResult | undefined> {
+  const academicQuery = input.academicQuery?.replace(/\s+/g, " ").trim();
+  if (!academicQuery) return service.findQuestionEvidence(input.question);
+  return service.findHostEvidence({
+    question: input.question,
+    academicQuery,
+    topicTerms: input.topicTerms,
+    parentTerms: input.parentTerms,
+    outcomeTerms: input.outcomeTerms
+  });
 }
 
 /**

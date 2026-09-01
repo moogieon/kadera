@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatHostEvidenceForMcp,
   formatPaperDetailForMcp,
+  findMcpEvidence,
   getPaperDetailDescription,
   noUsableEvidenceNotice,
   searchPaperEvidenceDescription,
@@ -24,6 +25,65 @@ describe("Kakao Tools tool manifest", () => {
     // the Korean trigger utterances that decide whether the tool is called.
     expect(searchPaperEvidenceDescription).not.toMatch(/after the tool returns/i);
     expect(searchPaperEvidenceDescription).not.toMatch(/academic_query/);
+  });
+});
+
+describe("question-only MCP search", () => {
+  it("plans an English scholarly query internally when the host sends only question", async () => {
+    const plannedQuestions: string[] = [];
+    const evidence = await findMcpEvidence({
+      findQuestionEvidence: async (question: string) => {
+        plannedQuestions.push(question);
+        return {
+          category: "health" as const,
+          queryTerms: ["creatine hair loss randomized controlled trial"],
+          papers: [],
+          retrievedPaperCount: 0,
+          sourceErrors: [],
+          sourceTraces: []
+        };
+      },
+      findHostEvidence: async () => {
+        throw new Error("host evidence path should not run");
+      }
+    }, {
+      question: "크레아틴을 먹으면 탈모가 생기나요?"
+    });
+
+    expect(plannedQuestions).toEqual(["크레아틴을 먹으면 탈모가 생기나요?"]);
+    expect(evidence?.queryTerms).toEqual(["creatine hair loss randomized controlled trial"]);
+  });
+
+  it("keeps a host-supplied scholarly query for backwards-compatible callers", async () => {
+    const calls: unknown[] = [];
+    await findMcpEvidence({
+      findQuestionEvidence: async () => {
+        throw new Error("question planner should not run");
+      },
+      findHostEvidence: async (input) => {
+        calls.push(input);
+        return {
+          category: "health" as const,
+          queryTerms: [input.academicQuery],
+          papers: [],
+          retrievedPaperCount: 0,
+          sourceErrors: [],
+          sourceTraces: []
+        };
+      }
+    }, {
+      question: "마운자로 효과와 부작용이 궁금해",
+      academicQuery: "tirzepatide efficacy adverse events systematic review",
+      topicTerms: ["tirzepatide"],
+      outcomeTerms: ["adverse events"]
+    });
+
+    expect(calls).toEqual([{
+      question: "마운자로 효과와 부작용이 궁금해",
+      academicQuery: "tirzepatide efficacy adverse events systematic review",
+      topicTerms: ["tirzepatide"],
+      outcomeTerms: ["adverse events"]
+    }]);
   });
 });
 

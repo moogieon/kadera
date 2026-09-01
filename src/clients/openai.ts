@@ -45,6 +45,13 @@ export interface GroundedPaperFinding {
   sourceSentence: string;
 }
 
+export interface FastHostQueryPlan {
+  academicQuery: string;
+  topicTerms: string[];
+  outcomeTerms: string[];
+  category: Exclude<Category, "auto">;
+}
+
 export class OpenAiRagClient {
   constructor(private readonly config: Config, private readonly fetchFn: typeof fetch = fetch) {}
 
@@ -146,6 +153,58 @@ export class OpenAiRagClient {
       }
     }
     throw lastError instanceof Error ? lastError : new Error("OpenAI search planning failed");
+  }
+
+  /**
+   * The public Kakao tool only asks the host for the Korean question. This
+   * compact planner resolves just the fields the scholarly indexes need,
+   * avoiding the much larger full-answer retrieval plan on the latency path.
+   */
+  async planHostQueryFast(
+    question: string,
+    fallbackCategory: Exclude<Category, "auto">
+  ): Promise<FastHostQueryPlan> {
+    if (!this.config.openaiApiKey) throw new Error("OpenAI key 없음");
+    const model = this.config.openaiFastPlannerModel ?? "gpt-5-nano";
+    const response = await this.fetchFn("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.config.openaiApiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        ...(model.startsWith("gpt-5") ? { reasoning: { effort: "minimal" } } : {}),
+        max_output_tokens: 400,
+        input: [
+          {
+            role: "system",
+            content: "Create a compact scholarly retrieval plan. topic_terms are exposure synonyms only, never outcomes. outcome_terms are requested endpoints only. category must be exactly one allowed value. Return JSON only."
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              question,
+              fallback_category: fallbackCategory,
+              allowed_categories: ["health", "nutrition", "exercise", "psychology", "childcare", "education"],
+              required_json: {
+                topic_terms: ["up to four English synonyms for the exact exposure only"],
+                outcome_terms: ["up to four English synonyms for the requested endpoint only"],
+                category: "exactly one allowed category"
+              }
+            })
+          }
+        ],
+        text: { format: { type: "json_object" } }
+      })
+    });
+    const json = (await response.json()) as OpenAiResponse;
+    if (!response.ok) {
+      throw new Error(`OpenAI fast host planning failed: ${response.status}${json.error?.message ? ` ${json.error.message}` : ""}`);
+    }
+    const text = readOutputText(json);
+    if (!text) throw new Error("OpenAI fast host planning returned empty text");
+    return normalizeFastHostQueryPlan(parseJson<Record<string, unknown>>(text), fallbackCategory);
   }
 
   /**
@@ -510,6 +569,48 @@ function parseJson<T = ModelClaimJson>(text: string): T {
     const preview = stripped.replace(/\s+/g, " ").slice(0, 300);
     throw new Error(`OpenAI JSON response could not be parsed${preview ? `: ${preview}` : " (empty output)"}`, { cause: error });
   }
+}
+
+export function normalizeFastHostQueryPlan(
+  value: Record<string, unknown>,
+  fallbackCategory: Exclude<Category, "auto">
+): FastHostQueryPlan {
+  const cleanTerms = (input: unknown): string[] => Array.isArray(input)
+    ? [...new Set(input
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.replace(/\s+/g, " ").trim())
+      .filter((item) => item.length >= 2 && /[a-z]/i.test(item)))]
+      .slice(0, 4)
+    : [];
+  const rawTopicTerms = cleanTerms(value.topic_terms);
+  const topicTerms = [...new Set(rawTopicTerms.flatMap((term) => {
+    const canonical = term
+      .replace(/\b(?:exposure|supplementation effects?|supplementation|intake|use)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return canonical.length >= 3 && /[a-z]/i.test(canonical) ? [canonical, term] : [term];
+  }))].slice(0, 4);
+  const outcomeTerms = cleanTerms(value.outcome_terms)
+    .filter((term) => !/\b(?:not primary|secondary only|unrelated)\b/i.test(term))
+    .map((term) => term.replace(/\([^)]*\)/g, " ").replace(/\b(?:outcome|endpoint)\b/gi, " ").replace(/\s+/g, " ").trim())
+    .filter((term) => term.length >= 2)
+    .slice(0, 4);
+  const allowed = new Set<Exclude<Category, "auto">>([
+    "health", "nutrition", "exercise", "psychology", "childcare", "education"
+  ]);
+  const category = typeof value.category === "string" && allowed.has(value.category as Exclude<Category, "auto">)
+    ? value.category as Exclude<Category, "auto">
+    : fallbackCategory;
+  if (topicTerms.length === 0) {
+    throw new Error("OpenAI fast host planning returned an invalid scholarly query");
+  }
+  const academicQuery = [
+    ...topicTerms.slice(0, 3),
+    ...outcomeTerms.slice(0, 3),
+    "systematic review",
+    "randomized controlled trial"
+  ].join(" ").slice(0, 450);
+  return { academicQuery, topicTerms, outcomeTerms, category };
 }
 
 function validateEvidenceTermExpansion(

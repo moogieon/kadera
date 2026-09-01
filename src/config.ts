@@ -12,6 +12,8 @@ export interface Config {
   geminiModel: string;
   openaiApiKey?: string;
   openaiModel: string;
+  /** Small model used only to turn a Korean MCP question into search terms. */
+  openaiFastPlannerModel?: string;
   fetchTimeoutMs: number;
   geminiFetchTimeoutMs: number;
   openaiFetchTimeoutMs: number;
@@ -48,6 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     geminiModel: emptyToUndefined(env.GEMINI_MODEL) ?? "gemini-2.5-flash-lite",
     openaiApiKey: emptyToUndefined(env.OPENAI_API_KEY),
     openaiModel: emptyToUndefined(env.OPENAI_MODEL) ?? "gpt-5-mini",
+    openaiFastPlannerModel: emptyToUndefined(env.OPENAI_FAST_PLANNER_MODEL) ?? "gpt-5-nano",
     fetchTimeoutMs: Number(env.FETCH_TIMEOUT_MS ?? 8000),
     geminiFetchTimeoutMs: Number(env.GEMINI_FETCH_TIMEOUT_MS ?? 30000),
     openaiFetchTimeoutMs: Number(env.OPENAI_FETCH_TIMEOUT_MS ?? 90000),
