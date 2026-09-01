@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import type { PaperReferenceRecord } from "./cache.js";
+import type { HostMcpLocalizationSource, HostMcpLocalizedPaper } from "./clients/openai.js";
 import { isConsumerHealthEvidenceCandidate } from "./evidence.js";
 import { screenSafety } from "./safety.js";
 import type { ClaimCheckerService } from "./service.js";
@@ -74,10 +75,29 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
           isError: true
         };
       }
-      const references = service.savePaperReferences(hostEvidencePapers(evidence));
+      const savedReferences = service.savePaperReferences(hostEvidencePapers(evidence));
+      const directReferences = savedReferences.filter((reference) =>
+        hostEvidenceScope(reference.paper, evidence) === "direct"
+      );
+      // Once direct evidence exists, unrelated topic-only papers make the
+      // answer look fuller but weaker. Keep them stored for diagnostics, not
+      // displayed as if they helped settle the user's actual question.
+      const references = directReferences.length > 0 ? directReferences : savedReferences;
+      const displayEvidence = { ...evidence, papers: references.map((reference) => reference.paper) };
+      const evidencePacket = formatHostEvidenceForMcp(displayEvidence, references);
+      const answerSources = hostAnswerSources(displayEvidence, references);
+      const localizedPapers = await service
+        .localizeHostMcpPapers(question, answerSources)
+        .catch((error: unknown) => {
+          console.error(`[mcp-answer] localization failed: ${error instanceof Error ? error.message : String(error)}`);
+          return undefined;
+        });
+      const completedAnswer = localizedPapers
+        ? formatCompletedHostAnswer(displayEvidence, references, answerSources, localizedPapers)
+        : undefined;
       return {
-        content: [{ type: "text", text: formatHostEvidenceForMcp(evidence, references) }],
-        structuredContent: hostEvidenceStructuredContent(evidence, references)
+        content: [{ type: "text", text: completedAnswer ?? evidencePacket }],
+        structuredContent: hostEvidenceStructuredContent(evidence, savedReferences)
       };
     }
   );
@@ -369,6 +389,88 @@ export function formatHostEvidenceForMcp(
     ].join("\n"))
   ];
   return lines.join("\n\n");
+}
+
+interface HostAnswerSource extends HostMcpLocalizationSource {
+  year?: number;
+  designKo: string;
+  scopeKo: string;
+  url: string;
+}
+
+function hostAnswerSources(
+  evidence: EvidenceSearchResult,
+  references: PaperReferenceRecord[]
+): HostAnswerSource[] {
+  return references.map((reference) => ({
+    paperId: reference.paperId,
+    title: reference.paper.title,
+    result: sourceResultExcerpt(reference.paper.abstract),
+    year: reference.paper.year,
+    designKo: evidenceLevelLabel(reference.paper.evidenceLevel),
+    scopeKo: hostEvidenceScopeLabel(hostEvidenceScope(reference.paper, evidence)),
+    url: reference.paper.url
+  }));
+}
+
+export function formatCompletedHostAnswer(
+  evidence: EvidenceSearchResult,
+  references: PaperReferenceRecord[],
+  sources: HostAnswerSource[],
+  localizedPapers: HostMcpLocalizedPaper[]
+): string {
+  const localizedById = new Map(localizedPapers.map((paper) => [paper.paperId, paper]));
+  const rows = sources.map((source) => {
+    const localized = localizedById.get(source.paperId)!;
+    return `| [${source.paperId}]${source.year ? ` · ${source.year}년` : ""} | ${localized.headlineKo} |`;
+  });
+  const details = sources.map((source) => {
+    const localized = localizedById.get(source.paperId)!;
+    const limitation = source.scopeKo.includes("직접 주제")
+      ? "이번 조회에서 확보한 초록만으로는 연구의 모든 세부 조건과 장기 결과를 확인할 수 없습니다."
+      : `${source.scopeKo}이므로 질문에 대한 직접 근거로 해석할 수 없습니다.`;
+    return [
+      `### [${source.paperId}] ${localized.titleKo}`,
+      `- **연도·연구 유형:** ${source.year ? `${source.year}년 · ` : ""}${source.designKo}`,
+      `- **근거 범위:** ${source.scopeKo}`,
+      `- **결과:** ${localized.resultKo}`,
+      `- **한계:** ${limitation}`,
+      `- [원문 보기](${source.url})`
+    ].join("\n");
+  });
+  const directIndex = sources.findIndex((source) => source.scopeKo.includes("직접 주제"));
+  const primaryIndex = directIndex >= 0 ? directIndex : 0;
+  const primarySource = sources[primaryIndex]!;
+  const primary = localizedById.get(primarySource.paperId)!;
+  const scopedHeadline = primary.headlineKo.startsWith("이 연구에서는")
+    ? primary.headlineKo
+    : `이 연구에서 확인된 결과는 다음과 같습니다. ${primary.headlineKo}`;
+  const contextualCount = sources.filter((source) => !source.scopeKo.includes("직접 주제")).length;
+  const followUps = references.slice(0, 2).map((reference, index) =>
+    index === 0
+      ? `- “${reference.paperId} 논문 자세히 알려줘”`
+      : `- “${reference.paperId} 초록 전체를 한국어로 번역해줘”`
+  );
+  return [
+    "## 현재 판단",
+    `**한줄 결론:** ${scopedHeadline}`,
+    `가장 직접적인 대표 연구에서는 ${primary.resultKo}`,
+    contextualCount > 0
+      ? `나머지 ${contextualCount}편은 질문의 대상 또는 결과 한쪽만 다룬 보완 근거이므로, 크레아틴과 탈모를 직접 연결한 증거로 해석하지 않았습니다.`
+      : "대표 논문은 질문의 대상과 결과를 직접 다룬 자료입니다.",
+    "## 이번 판단에 사용한 근거",
+    `초록이 있는 후보 문헌 ${evidence.retrievedPaperCount ?? sources.length}편 가운데 대표 논문 ${sources.length}편을 확인했습니다.`,
+    "## 연구 결과 한눈에 보기",
+    ["| 연구 | 핵심 결과 |", "| --- | --- |", ...rows].join("\n"),
+    `## 대표 논문 ${sources.length}편`,
+    details.join("\n\n"),
+    "## 연구를 읽을 때",
+    "직접 근거와 보완 근거를 구분해 읽어야 합니다. 논문마다 대상과 측정 방법, 추적 기간이 다르며, 이번 답변은 연결된 원문 초록에서 확인할 수 있는 결과까지만 반영했습니다.",
+    "## 논문을 더 자세히 보고 싶다면",
+    "궁금한 논문 키를 골라 이렇게 물어보세요.",
+    ...followUps,
+    "해당 논문의 초록 전체 번역, 연구 설계와 대상, 주요 수치, 해석할 때의 한계를 자세히 확인할 수 있습니다."
+  ].filter(Boolean).join("\n\n");
 }
 
 export function formatPaperDetailForMcp(reference: PaperReferenceRecord): string {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeFastHostQueryPlan } from "./openai.js";
+import { normalizeFastHostQueryPlan, validateHostMcpLocalization } from "./openai.js";
 
 describe("fast host query planning", () => {
   it("turns verbose model labels into stable exposure and outcome search terms", () => {
@@ -26,5 +26,31 @@ describe("fast host query planning", () => {
     }, "nutrition");
 
     expect(plan.category).toBe("nutrition");
+  });
+});
+
+describe("host MCP paper localization validation", () => {
+  it("accepts faithful Korean fields and rejects invented numbers", () => {
+    const sources = [{
+      paperId: "1234-a",
+      title: "A 12-week randomized trial",
+      result: "Thirty-eight participants completed the 12-week study."
+    }];
+    const valid = {
+      papers: [{
+        paper_id: "1234-a",
+        title_ko: "12주 무작위 시험",
+        result_ko: "참가자 38명이 12주 연구를 완료했습니다.",
+        headline_ko: "이 연구에서는 참가자 38명이 12주 연구를 완료했습니다."
+      }]
+    };
+
+    expect(validateHostMcpLocalization(valid, sources)?.[0]?.paperId).toBe("1234-a");
+    expect(validateHostMcpLocalization({
+      papers: [{ ...valid.papers[0], result_ko: "참가자 100명이 12주 연구를 완료했습니다." }]
+    }, sources)).toBeUndefined();
+    expect(validateHostMcpLocalization({
+      papers: [{ ...valid.papers[0], result_ko: "참가자들이 연구를 완료했습니다." }]
+    }, sources)).toBeUndefined();
   });
 });

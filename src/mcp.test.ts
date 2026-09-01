@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatHostEvidenceForMcp,
+  formatCompletedHostAnswer,
   formatPaperDetailForMcp,
   findMcpEvidence,
   getPaperDetailDescription,
@@ -134,6 +135,48 @@ describe("paper follow-up flow", () => {
     expect(text).toContain("최종 답변에는 한국어 제목만 표시");
     expect(text).toContain("답변 마지막 줄은 반드시 '[원문 보기](https://pubmed.ncbi.nlm.nih.gov/1/)' 링크로 끝내세요");
     expect(text).toContain("https://pubmed.ncbi.nlm.nih.gov/1/");
+  });
+});
+
+describe("completed MCP answer", () => {
+  it("returns the fixed local Kadera sections without exposing answer-writing instructions", () => {
+    const selected = paper({
+      sourceId: "creatine-hair",
+      title: "Does creatine cause hair loss? A 12-week randomized controlled trial.",
+      year: 2025,
+      abstract: "Thirty-eight participants completed the study."
+    });
+    const reference = { paperId: "9883-w", paper: selected };
+    const text = formatCompletedHostAnswer({
+      category: "health",
+      queryTerms: ["creatine hair loss"],
+      retrievedPaperCount: 44,
+      papers: [selected],
+      sourceErrors: [],
+      sourceTraces: []
+    }, [reference], [{
+      paperId: "9883-w",
+      title: selected.title,
+      result: selected.abstract!,
+      year: 2025,
+      designKo: "임상·비교 연구",
+      scopeKo: "직접 주제",
+      url: selected.url
+    }], [{
+      paperId: "9883-w",
+      titleKo: "크레아틴이 탈모를 유발하는가? 12주 무작위 대조 연구",
+      resultKo: "참가자 38명이 연구를 완료했습니다.",
+      headlineKo: "이 연구에서는 크레아틴과 탈모를 직접 평가했습니다."
+    }]);
+
+    expect(text.startsWith("## 현재 판단")).toBe(true);
+    expect(text).toContain("## 연구 결과 한눈에 보기");
+    expect(text).toContain("## 대표 논문 1편");
+    expect(text).toContain("[9883-w]");
+    expect(text).toContain("[원문 보기]");
+    expect(text).toContain("9883-w 논문 자세히 알려줘");
+    expect(text).not.toContain("최종 답변 필수 규칙");
+    expect(text).not.toContain(selected.title);
   });
 });
 

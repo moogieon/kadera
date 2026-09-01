@@ -20,6 +20,28 @@ interface OpenAiResponse {
   error?: { message?: string };
 }
 
+export interface HostMcpLocalizationSource {
+  paperId: string;
+  title: string;
+  result: string;
+}
+
+export interface HostMcpLocalizedPaper {
+  paperId: string;
+  titleKo: string;
+  resultKo: string;
+  headlineKo: string;
+}
+
+interface HostMcpLocalizationResponse {
+  papers?: Array<{
+    paper_id?: unknown;
+    title_ko?: unknown;
+    result_ko?: unknown;
+    headline_ko?: unknown;
+  }>;
+}
+
 interface EvidenceTermExpansion {
   terms?: Array<{
     term?: unknown;
@@ -545,6 +567,136 @@ export class OpenAiRagClient {
     if (!text) throw new Error("OpenAI RAG synthesis returned empty text");
     return mergeModelAnswer(parseJson(text), fallback, synthesisEvidence);
   }
+
+  /** Translate only source-bound fields. Layout and product wording are built
+   * deterministically by the MCP renderer, so the host cannot drop sections. */
+  async localizeHostMcpPapers(
+    question: string,
+    sources: HostMcpLocalizationSource[]
+  ): Promise<HostMcpLocalizedPaper[] | undefined> {
+    if (!this.config.openaiApiKey || sources.length === 0) return undefined;
+    const model = this.config.openaiFastPlannerModel ?? this.config.openaiModel;
+    const response = await this.fetchFn("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.config.openaiApiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        ...(model.startsWith("gpt-5") ? { reasoning: { effort: "minimal" } } : {}),
+        max_output_tokens: 1_600,
+        input: [
+          {
+            role: "system",
+            content: [
+              "Translate supplied scholarly titles and result excerpts into natural Korean.",
+              "title_ko must be a Korean translation of title; never copy the English title into title_ko.",
+              "Use only each supplied string: do not add background facts, methods, limitations, advice, or numbers.",
+              "Preserve direction, comparisons, sample sizes, effect sizes, confidence intervals, and uncertainty.",
+              "Every number or spelled-out number in result must appear in result_ko; translate English number words into digits.",
+              "Translate 'evidence against the claim' as evidence that contradicts the claim, never as a failure to find evidence.",
+              "headline_ko must start with '이 연구에서는' and state one short result without generalizing beyond that study.",
+              "For each input paper, copy paperId exactly into the output field paper_id. Never output an example or placeholder ID.",
+              "Return JSON only as {papers:[{paper_id,title_ko,result_ko,headline_ko}]}."
+            ].join(" ")
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              question,
+              papers: sources
+            })
+          }
+        ],
+        text: { format: { type: "json_object" } }
+      })
+    });
+    const json = (await response.json()) as OpenAiResponse;
+    if (!response.ok) {
+      throw new Error(`OpenAI MCP localization failed: ${response.status}${json.error?.message ? ` ${json.error.message}` : ""}`);
+    }
+    const text = readOutputText(json);
+    if (!text) return undefined;
+    const parsed = parseJson<HostMcpLocalizationResponse>(text);
+    const localized = validateHostMcpLocalization(parsed, sources);
+    if (!localized && process.env.DEBUG_HOST_MCP_LOCALIZATION === "true") {
+      console.error("[mcp-localization] rejected", JSON.stringify(parsed));
+    }
+    return localized;
+  }
+}
+
+export function validateHostMcpLocalization(
+  value: HostMcpLocalizationResponse,
+  sources: HostMcpLocalizationSource[]
+): HostMcpLocalizedPaper[] | undefined {
+  if (!Array.isArray(value.papers) || value.papers.length !== sources.length) return undefined;
+  const byId = new Map(value.papers.map((paper) => [paper.paper_id, paper]));
+  const localized: HostMcpLocalizedPaper[] = [];
+  for (const source of sources) {
+    const paper = byId.get(source.paperId);
+    if (!paper) return undefined;
+    const titleKo = cleanKoreanField(paper.title_ko, 5, 240);
+    const resultKo = cleanKoreanField(paper.result_ko, 10, 700);
+    const headlineKo = cleanKoreanField(paper.headline_ko, 8, 180);
+    if (!titleKo || !resultKo || !headlineKo) return undefined;
+    if (hasUnsupportedHostNumber(titleKo, source.title)) return undefined;
+    const sourceText = `${source.title} ${source.result}`;
+    if (hasUnsupportedHostNumber(resultKo, sourceText)) return undefined;
+    if (hasUnsupportedHostNumber(headlineKo, sourceText)) return undefined;
+    if (missingRequiredHostNumber(resultKo, source.result)) return undefined;
+    localized.push({ paperId: source.paperId, titleKo, resultKo, headlineKo });
+  }
+  return localized;
+}
+
+function cleanKoreanField(value: unknown, minLength: number, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length < minLength || clean.length > maxLength || !/[가-힣]/.test(clean)) return undefined;
+  return clean;
+}
+
+function hasUnsupportedHostNumber(translated: string, source: string): boolean {
+  const sourceNumbers = new Set(source.match(/\d+(?:[.,]\d+)?/g) ?? []);
+  for (const value of englishNumberValues(source)) sourceNumbers.add(String(value));
+  return (translated.match(/\d+(?:[.,]\d+)?/g) ?? []).some((number) => !sourceNumbers.has(number));
+}
+
+function missingRequiredHostNumber(translated: string, source: string): boolean {
+  const translatedNumbers = new Set(translated.match(/\d+(?:[.,]\d+)?/g) ?? []);
+  const required = new Set([
+    ...(source.match(/\d+(?:[.,]\d+)?/g) ?? []),
+    ...englishNumberValues(source).map(String)
+  ]);
+  return [...required].some((number) => !translatedNumbers.has(number));
+}
+
+function englishNumberValues(value: string): number[] {
+  const ones: Record<string, number> = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11,
+    twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+    seventeen: 17, eighteen: 18, nineteen: 19
+  };
+  const tens: Record<string, number> = {
+    twenty: 20, thirty: 30, forty: 40, fifty: 50,
+    sixty: 60, seventy: 70, eighty: 80, ninety: 90
+  };
+  const tokens = value.toLowerCase().match(/[a-z]+/g) ?? [];
+  const numbers: number[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (tens[token] !== undefined) {
+      const next = ones[tokens[index + 1] ?? ""];
+      numbers.push(tens[token] + (next !== undefined && next < 10 ? next : 0));
+      if (next !== undefined && next < 10) index += 1;
+      continue;
+    }
+    if (ones[token] !== undefined) numbers.push(ones[token]);
+  }
+  return numbers;
 }
 
 function readOutputText(response: OpenAiResponse): string {

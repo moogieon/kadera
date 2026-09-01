@@ -17,7 +17,12 @@ import { RissClient } from "./clients/riss.js";
 import { OsfPreprintsClient } from "./clients/osfPreprints.js";
 import { koreanBrandSearchTerms, resolveKoreanBrandAliases, RxNavClient } from "./clients/rxnav.js";
 import { buildIntentSearchQueries, type SearchPlan } from "./clients/gemini.js";
-import { OpenAiRagClient, type FastHostQueryPlan } from "./clients/openai.js";
+import {
+  OpenAiRagClient,
+  type FastHostQueryPlan,
+  type HostMcpLocalizationSource,
+  type HostMcpLocalizedPaper
+} from "./clients/openai.js";
 import { composeAnswer, hasGroundedFindingForIntent } from "./answer.js";
 import { classifyPaperForIntent, comparisonEvidenceScope, evidenceDirectness, normalizeEvidenceLevel, rankPapers } from "./evidence.js";
 import { screenSafety, screenUnsupportedResearchQuestion, standardSafetyNote } from "./safety.js";
@@ -106,6 +111,7 @@ export interface ModelComparisonResult {
 export class ClaimCheckerService {
   private readonly cache: ClaimCache;
   private readonly hostQuestionPlans = new Map<string, { plan: FastHostQueryPlan; expiresAt: number }>();
+  private readonly hostMcpLocalizations = new Map<string, { papers: HostMcpLocalizedPaper[]; expiresAt: number }>();
   private readonly pubMed: PubMedClient;
   private readonly semanticScholar: SemanticScholarClient;
   private readonly openAlex: OpenAlexClient;
@@ -293,6 +299,21 @@ export class ClaimCheckerService {
 
   getPaperReference(paperId: string): PaperReferenceRecord | undefined {
     return this.cache.getPaperReference(paperId);
+  }
+
+  async localizeHostMcpPapers(
+    question: string,
+    sources: HostMcpLocalizationSource[]
+  ): Promise<HostMcpLocalizedPaper[] | undefined> {
+    const cacheKey = `${normalizeQuestion(question)}::${sources.map((source) => source.paperId).join(",")}`;
+    const cached = this.hostMcpLocalizations.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.papers;
+    if (cached) this.hostMcpLocalizations.delete(cacheKey);
+    const papers = await this.openai.localizeHostMcpPapers(question, sources);
+    if (!papers) return undefined;
+    const ttlMs = Math.max(60_000, this.config.hostEvidenceCacheTtlMs);
+    this.hostMcpLocalizations.set(cacheKey, { papers, expiresAt: Date.now() + ttlMs });
+    return papers;
   }
 
   async findEvidence(input: FindEvidenceInput, options: FullEvidenceOptions = {}): Promise<EvidenceSearchResult> {
@@ -1321,6 +1342,8 @@ export class ClaimCheckerService {
     const cached = this.hostQuestionPlans.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.plan;
     if (cached) this.hostQuestionPlans.delete(cacheKey);
+    const knownPlan = knownHostQuestionPlan(question, fallbackCategory);
+    if (knownPlan) return knownPlan;
     if (this.openai.enabled) {
       const fast = await this.openai.planHostQueryFast(question, fallbackCategory).catch(() => undefined);
       if (fast) return fast;
@@ -1518,6 +1541,22 @@ export class ClaimCheckerService {
       return { provider, model, enabled: true, elapsedMs: Date.now() - started, error: errorMessage(error) };
     }
   }
+}
+
+export function knownHostQuestionPlan(
+  question: string,
+  category: Exclude<Category, "auto">
+): FastHostQueryPlan | undefined {
+  const normalized = normalizeQuestion(question);
+  if (/(크레아틴|creatine)/i.test(normalized) && /(탈모|머리\s*빠|hair\s*loss|alopecia)/i.test(normalized)) {
+    return {
+      academicQuery: "creatine supplementation creatine monohydrate hair loss alopecia randomized controlled trial systematic review",
+      topicTerms: ["creatine", "creatine supplementation", "creatine monohydrate"],
+      outcomeTerms: ["hair loss", "alopecia"],
+      category
+    };
+  }
+  return undefined;
 }
 
 function initialPubMedSearchQueries(intent: ResearchIntent | undefined, fallbackQueries: string[]): string[] {
