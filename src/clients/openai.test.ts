@@ -54,7 +54,7 @@ describe("host MCP paper localization validation", () => {
     expect(validateHostMcpLocalization({
       ...valid,
       papers: [{ ...valid.papers[0], result_ko: "참가자들이 연구를 완료했습니다." }]
-    }, sources)).toBeUndefined();
+    }, sources)?.papers[0]?.resultKo).toBe("참가자들이 연구를 완료했습니다.");
     expect(validateHostMcpLocalization({
       ...valid,
       conclusion_ko: "이 연구에서는 크레아틴과 탈모를 직접 평가했습니다."

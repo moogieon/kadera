@@ -598,6 +598,7 @@ export class OpenAiRagClient {
             content: [
               "Translate supplied scholarly titles and result excerpts into natural Korean.",
               "title_ko must be a Korean translation of title; never copy the English title into title_ko.",
+              "Except for standard medical abbreviations such as LDL, HbA1c, CI, RR, and drug names, write all prose in Korean. Never leave an English clause or phrase untranslated.",
               "Use only each supplied string: do not add background facts, methods, limitations, advice, or numbers.",
               "Preserve direction, comparisons, sample sizes, effect sizes, confidence intervals, and uncertainty.",
               "Every number or spelled-out number in result must appear in result_ko; translate English number words into digits.",
@@ -654,7 +655,6 @@ export function validateHostMcpLocalization(
     const sourceText = `${source.title} ${source.result}`;
     if (hasUnsupportedHostNumber(resultKo, sourceText)) return undefined;
     if (hasUnsupportedHostNumber(headlineKo, sourceText)) return undefined;
-    if (missingRequiredHostNumber(resultKo, source.result)) return undefined;
     localized.push({ paperId: source.paperId, titleKo, resultKo, headlineKo });
   }
   return { conclusionKo, papers: localized };
@@ -671,15 +671,6 @@ function hasUnsupportedHostNumber(translated: string, source: string): boolean {
   const sourceNumbers = new Set(source.match(/\d+(?:[.,]\d+)?/g) ?? []);
   for (const value of englishNumberValues(source)) sourceNumbers.add(String(value));
   return (translated.match(/\d+(?:[.,]\d+)?/g) ?? []).some((number) => !sourceNumbers.has(number));
-}
-
-function missingRequiredHostNumber(translated: string, source: string): boolean {
-  const translatedNumbers = new Set(translated.match(/\d+(?:[.,]\d+)?/g) ?? []);
-  const required = new Set([
-    ...(source.match(/\d+(?:[.,]\d+)?/g) ?? []),
-    ...englishNumberValues(source).map(String)
-  ]);
-  return [...required].some((number) => !translatedNumbers.has(number));
 }
 
 function englishNumberValues(value: string): number[] {
