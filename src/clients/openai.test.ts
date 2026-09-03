@@ -37,6 +37,7 @@ describe("host MCP paper localization validation", () => {
       result: "Thirty-eight participants completed the 12-week study."
     }];
     const valid = {
+      conclusion_ko: "현재 근거만으로는 크레아틴이 탈모를 일으킨다고 보기 어렵습니다.",
       papers: [{
         paper_id: "1234-a",
         title_ko: "12주 무작위 시험",
@@ -45,12 +46,18 @@ describe("host MCP paper localization validation", () => {
       }]
     };
 
-    expect(validateHostMcpLocalization(valid, sources)?.[0]?.paperId).toBe("1234-a");
+    expect(validateHostMcpLocalization(valid, sources)?.papers[0]?.paperId).toBe("1234-a");
     expect(validateHostMcpLocalization({
+      ...valid,
       papers: [{ ...valid.papers[0], result_ko: "참가자 100명이 12주 연구를 완료했습니다." }]
     }, sources)).toBeUndefined();
     expect(validateHostMcpLocalization({
+      ...valid,
       papers: [{ ...valid.papers[0], result_ko: "참가자들이 연구를 완료했습니다." }]
+    }, sources)).toBeUndefined();
+    expect(validateHostMcpLocalization({
+      ...valid,
+      conclusion_ko: "이 연구에서는 크레아틴과 탈모를 직접 평가했습니다."
     }, sources)).toBeUndefined();
   });
 });

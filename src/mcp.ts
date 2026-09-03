@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import type { PaperReferenceRecord } from "./cache.js";
-import type { HostMcpLocalizationSource, HostMcpLocalizedPaper } from "./clients/openai.js";
+import type { HostMcpLocalization, HostMcpLocalizationSource } from "./clients/openai.js";
 import { isConsumerHealthEvidenceCandidate } from "./evidence.js";
 import { screenSafety } from "./safety.js";
 import type { ClaimCheckerService } from "./service.js";
@@ -15,10 +15,10 @@ import { categories, type EvidenceLevel, type EvidenceSearchResult, type Paper }
  * Answer-writing policy belongs in the tool result, not here.
  */
 export const searchPaperEvidenceDescription =
-  "Kadera(카더라 말고) checks Korean everyday health rumors against live scholarly papers from PubMed, Europe PMC, OpenAlex and Crossref. Call it whenever the user asks whether something is good, bad, safe, effective, or true about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology, or study methods, even when the user never says paper, research, or evidence. Typical Korean triggers: '소시지 몸에 안 좋아?', '크레아틴 먹으면 탈모 와?', '달걀 하루 두 개 괜찮아?', '간헐적 단식 효과 있어?', '아기한테 영상 보여줘도 돼?', '명상하면 불안 줄어?', '이거 진짜야?', '카더라 아니야?'. Prefer calling it over answering from memory: the user wants verified papers, not recollection. Do not call it for casual chat, creative writing, personal opinions, shopping, or anything involving personal or medical-record data.";
+  "MUST CALL this Kadera(카더라 말고) tool before answering any Korean question, claim, rumor, or curiosity that can be checked with academic research. The user does not need to say paper or research. Exact registered starters that MUST trigger it: '마운자로에대해 알려줘' and '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'. Also call for health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, education, psychology, and study methods, including whether something is true, safe, harmful, helpful, or effective. It searches live scholarly sources and returns a complete Korean answer (완성 답변) with real paper links and [1234-a] follow-up keys. Pass the user's Korean text unchanged in question. Do not answer from model memory first. Do not call for casual chat, creative writing, opinions, shopping, or personal or medical-record data.";
 
 export const getPaperDetailDescription =
-  "Kadera(카더라 말고) opens one paper previously returned by search_paper_evidence. Call it when the user mentions a displayed paper key such as '1234-a 논문 자세히 알려줘', '1234-a 초록 번역해줘', or '1234-a 연구를 깊게 설명해줘'. Pass only that exact key. It returns the saved bibliographic record and the complete available abstract so you can translate it faithfully into Korean and explain the study design, participants, results, and limitations. Do not use it for a new topic search, do not guess a key, and do not claim that an abstract is the full paper.";
+  "MUST CALL this Kadera(카더라 말고) paper-detail tool whenever the user gives a paper key in the form 1234-a and asks to view, explain, summarize, translate, or inspect that paper. Exact registered starter that MUST trigger it: '8903-a 논문에 대해서 자세히 알려줘'. Pass only the exact key as paper_id; brackets are optional. It returns the saved title, bibliography, link, and complete available abstract so you can translate every abstract sentence faithfully into Korean and explain the design, participants, results, numbers, and limitations. Do not answer from memory, guess another key, start a new topic search, or claim the abstract is the full paper.";
 
 export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
   const server = new McpServer({
@@ -86,14 +86,14 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
       const displayEvidence = { ...evidence, papers: references.map((reference) => reference.paper) };
       const evidencePacket = formatHostEvidenceForMcp(displayEvidence, references);
       const answerSources = hostAnswerSources(displayEvidence, references);
-      const localizedPapers = await service
+      const localization = await service
         .localizeHostMcpPapers(question, answerSources)
         .catch((error: unknown) => {
           console.error(`[mcp-answer] localization failed: ${error instanceof Error ? error.message : String(error)}`);
           return undefined;
         });
-      const completedAnswer = localizedPapers
-        ? formatCompletedHostAnswer(displayEvidence, references, answerSources, localizedPapers)
+      const completedAnswer = localization
+        ? formatCompletedHostAnswer(displayEvidence, references, answerSources, localization)
         : undefined;
       return {
         content: [{ type: "text", text: completedAnswer ?? evidencePacket }],
@@ -417,8 +417,9 @@ export function formatCompletedHostAnswer(
   evidence: EvidenceSearchResult,
   references: PaperReferenceRecord[],
   sources: HostAnswerSource[],
-  localizedPapers: HostMcpLocalizedPaper[]
+  localization: HostMcpLocalization
 ): string {
+  const localizedPapers = localization.papers;
   const localizedById = new Map(localizedPapers.map((paper) => [paper.paperId, paper]));
   const rows = sources.map((source) => {
     const localized = localizedById.get(source.paperId)!;
@@ -442,9 +443,6 @@ export function formatCompletedHostAnswer(
   const primaryIndex = directIndex >= 0 ? directIndex : 0;
   const primarySource = sources[primaryIndex]!;
   const primary = localizedById.get(primarySource.paperId)!;
-  const scopedHeadline = primary.headlineKo.startsWith("이 연구에서는")
-    ? primary.headlineKo
-    : `이 연구에서 확인된 결과는 다음과 같습니다. ${primary.headlineKo}`;
   const contextualCount = sources.filter((source) => !source.scopeKo.includes("직접 주제")).length;
   const followUps = references.slice(0, 2).map((reference, index) =>
     index === 0
@@ -453,7 +451,8 @@ export function formatCompletedHostAnswer(
   );
   return [
     "## 현재 판단",
-    `**한줄 결론:** ${scopedHeadline}`,
+    `**한줄 결론:** ${localization.conclusionKo}`,
+    "## 상세 답변",
     `가장 직접적인 대표 연구에서는 ${primary.resultKo}`,
     contextualCount > 0
       ? `나머지 ${contextualCount}편은 질문의 대상 또는 결과 한쪽만 다룬 보완 근거이므로, 크레아틴과 탈모를 직접 연결한 증거로 해석하지 않았습니다.`

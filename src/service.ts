@@ -20,8 +20,8 @@ import { buildIntentSearchQueries, type SearchPlan } from "./clients/gemini.js";
 import {
   OpenAiRagClient,
   type FastHostQueryPlan,
-  type HostMcpLocalizationSource,
-  type HostMcpLocalizedPaper
+  type HostMcpLocalization,
+  type HostMcpLocalizationSource
 } from "./clients/openai.js";
 import { composeAnswer, hasGroundedFindingForIntent } from "./answer.js";
 import { classifyPaperForIntent, comparisonEvidenceScope, evidenceDirectness, normalizeEvidenceLevel, rankPapers } from "./evidence.js";
@@ -111,7 +111,7 @@ export interface ModelComparisonResult {
 export class ClaimCheckerService {
   private readonly cache: ClaimCache;
   private readonly hostQuestionPlans = new Map<string, { plan: FastHostQueryPlan; expiresAt: number }>();
-  private readonly hostMcpLocalizations = new Map<string, { papers: HostMcpLocalizedPaper[]; expiresAt: number }>();
+  private readonly hostMcpLocalizations = new Map<string, { localization: HostMcpLocalization; expiresAt: number }>();
   private readonly pubMed: PubMedClient;
   private readonly semanticScholar: SemanticScholarClient;
   private readonly openAlex: OpenAlexClient;
@@ -304,16 +304,16 @@ export class ClaimCheckerService {
   async localizeHostMcpPapers(
     question: string,
     sources: HostMcpLocalizationSource[]
-  ): Promise<HostMcpLocalizedPaper[] | undefined> {
+  ): Promise<HostMcpLocalization | undefined> {
     const cacheKey = `${normalizeQuestion(question)}::${sources.map((source) => source.paperId).join(",")}`;
     const cached = this.hostMcpLocalizations.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.papers;
+    if (cached && cached.expiresAt > Date.now()) return cached.localization;
     if (cached) this.hostMcpLocalizations.delete(cacheKey);
-    const papers = await this.openai.localizeHostMcpPapers(question, sources);
-    if (!papers) return undefined;
+    const localization = await this.openai.localizeHostMcpPapers(question, sources);
+    if (!localization) return undefined;
     const ttlMs = Math.max(60_000, this.config.hostEvidenceCacheTtlMs);
-    this.hostMcpLocalizations.set(cacheKey, { papers, expiresAt: Date.now() + ttlMs });
-    return papers;
+    this.hostMcpLocalizations.set(cacheKey, { localization, expiresAt: Date.now() + ttlMs });
+    return localization;
   }
 
   async findEvidence(input: FindEvidenceInput, options: FullEvidenceOptions = {}): Promise<EvidenceSearchResult> {

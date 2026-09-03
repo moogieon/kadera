@@ -21,6 +21,14 @@ describe("Kakao Tools tool manifest", () => {
     expect(searchPaperEvidenceDescription).toContain("Kadera(카더라 말고)");
   });
 
+  it("matches every registered starter with an explicit call instruction", () => {
+    expect(searchPaperEvidenceDescription).toMatch(/^MUST CALL/);
+    expect(searchPaperEvidenceDescription).toContain("마운자로에대해 알려줘");
+    expect(searchPaperEvidenceDescription).toContain("제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?");
+    expect(getPaperDetailDescription).toMatch(/^MUST CALL/);
+    expect(getPaperDetailDescription).toContain("8903-a 논문에 대해서 자세히 알려줘");
+  });
+
   it("spends the budget on the calling decision, not on answer-writing policy", () => {
     // These belong in the tool result. In the manifest they only crowd out
     // the Korean trigger utterances that decide whether the tool is called.
@@ -162,14 +170,19 @@ describe("completed MCP answer", () => {
       designKo: "임상·비교 연구",
       scopeKo: "직접 주제",
       url: selected.url
-    }], [{
-      paperId: "9883-w",
-      titleKo: "크레아틴이 탈모를 유발하는가? 12주 무작위 대조 연구",
-      resultKo: "참가자 38명이 연구를 완료했습니다.",
-      headlineKo: "이 연구에서는 크레아틴과 탈모를 직접 평가했습니다."
-    }]);
+    }], {
+      conclusionKo: "아니요, 현재 근거로는 크레아틴이 탈모를 일으킨다고 보기 어렵습니다.",
+      papers: [{
+        paperId: "9883-w",
+        titleKo: "크레아틴이 탈모를 유발하는가? 12주 무작위 대조 연구",
+        resultKo: "참가자 38명이 연구를 완료했습니다.",
+        headlineKo: "이 연구에서는 크레아틴과 탈모를 직접 평가했습니다."
+      }]
+    });
 
     expect(text.startsWith("## 현재 판단")).toBe(true);
+    expect(text).toContain("**한줄 결론:** 아니요, 현재 근거로는 크레아틴이 탈모를 일으킨다고 보기 어렵습니다.");
+    expect(text).toContain("## 상세 답변");
     expect(text).toContain("## 연구 결과 한눈에 보기");
     expect(text).toContain("## 대표 논문 1편");
     expect(text).toContain("[9883-w]");

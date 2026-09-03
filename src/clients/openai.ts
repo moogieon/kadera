@@ -33,7 +33,13 @@ export interface HostMcpLocalizedPaper {
   headlineKo: string;
 }
 
+export interface HostMcpLocalization {
+  conclusionKo: string;
+  papers: HostMcpLocalizedPaper[];
+}
+
 interface HostMcpLocalizationResponse {
+  conclusion_ko?: unknown;
   papers?: Array<{
     paper_id?: unknown;
     title_ko?: unknown;
@@ -573,7 +579,7 @@ export class OpenAiRagClient {
   async localizeHostMcpPapers(
     question: string,
     sources: HostMcpLocalizationSource[]
-  ): Promise<HostMcpLocalizedPaper[] | undefined> {
+  ): Promise<HostMcpLocalization | undefined> {
     if (!this.config.openaiApiKey || sources.length === 0) return undefined;
     const model = this.config.openaiFastPlannerModel ?? this.config.openaiModel;
     const response = await this.fetchFn("https://api.openai.com/v1/responses", {
@@ -596,9 +602,10 @@ export class OpenAiRagClient {
               "Preserve direction, comparisons, sample sizes, effect sizes, confidence intervals, and uncertainty.",
               "Every number or spelled-out number in result must appear in result_ko; translate English number words into digits.",
               "Translate 'evidence against the claim' as evidence that contradicts the claim, never as a failure to find evidence.",
+              "conclusion_ko is the answer's one-line conclusion across the supplied papers. Answer the user's question directly in one plain Korean sentence of at most 80 characters, without study details or statistics. For a yes/no claim, begin with '네,', '아니요,', or '현재 근거만으로는'. For a broad topic request, state the main effect and main caveat. Never begin conclusion_ko with '이 연구에서는' or '이 논문에서는'.",
               "headline_ko must start with '이 연구에서는' and state one short result without generalizing beyond that study.",
               "For each input paper, copy paperId exactly into the output field paper_id. Never output an example or placeholder ID.",
-              "Return JSON only as {papers:[{paper_id,title_ko,result_ko,headline_ko}]}."
+              "Return JSON only as {conclusion_ko,papers:[{paper_id,title_ko,result_ko,headline_ko}]}."
             ].join(" ")
           },
           {
@@ -630,8 +637,10 @@ export class OpenAiRagClient {
 export function validateHostMcpLocalization(
   value: HostMcpLocalizationResponse,
   sources: HostMcpLocalizationSource[]
-): HostMcpLocalizedPaper[] | undefined {
+): HostMcpLocalization | undefined {
   if (!Array.isArray(value.papers) || value.papers.length !== sources.length) return undefined;
+  const conclusionKo = cleanKoreanField(value.conclusion_ko, 5, 100);
+  if (!conclusionKo || /^이 (?:연구|논문)에서는/.test(conclusionKo)) return undefined;
   const byId = new Map(value.papers.map((paper) => [paper.paper_id, paper]));
   const localized: HostMcpLocalizedPaper[] = [];
   for (const source of sources) {
@@ -648,7 +657,7 @@ export function validateHostMcpLocalization(
     if (missingRequiredHostNumber(resultKo, source.result)) return undefined;
     localized.push({ paperId: source.paperId, titleKo, resultKo, headlineKo });
   }
-  return localized;
+  return { conclusionKo, papers: localized };
 }
 
 function cleanKoreanField(value: unknown, minLength: number, maxLength: number): string | undefined {
