@@ -1548,6 +1548,15 @@ export function knownHostQuestionPlan(
   category: Exclude<Category, "auto">
 ): FastHostQueryPlan | undefined {
   const normalized = normalizeQuestion(question);
+  if (/(마운자로|mounjaro|tirzepatide)/i.test(normalized) &&
+    /(알려|궁금|뭐야|어때|정보)/i.test(normalized)) {
+    return {
+      academicQuery: "tirzepatide weight loss glycemic control adverse events systematic review meta-analysis randomized controlled trial",
+      topicTerms: ["tirzepatide"],
+      outcomeTerms: ["weight loss", "glycemic control", "adverse events"],
+      category
+    };
+  }
   if (/(크레아틴|creatine)/i.test(normalized) && /(탈모|머리\s*빠|hair\s*loss|alopecia)/i.test(normalized)) {
     return {
       academicQuery: "creatine supplementation creatine monohydrate hair loss alopecia randomized controlled trial systematic review",
