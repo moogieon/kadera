@@ -18,14 +18,14 @@ describe("Kakao Tools tool manifest", () => {
   });
 
   it("names the service in English and Korean so the host can attribute it", () => {
-    expect(searchPaperEvidenceDescription).toContain("Kadera(카더라 말고)");
+    expect(searchPaperEvidenceDescription).toContain("카더라 말고(Kadera)");
   });
 
   it("matches every registered starter with an explicit call instruction", () => {
-    expect(searchPaperEvidenceDescription).toMatch(/^MUST CALL/);
+    expect(searchPaperEvidenceDescription).toMatch(/^반드시 호출하세요/);
     expect(searchPaperEvidenceDescription).toContain("마운자로에대해 알려줘");
     expect(searchPaperEvidenceDescription).toContain("제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?");
-    expect(getPaperDetailDescription).toMatch(/^MUST CALL/);
+    expect(getPaperDetailDescription).toMatch(/^반드시 호출하세요/);
     expect(getPaperDetailDescription).toContain("8903-a 논문에 대해서 자세히 알려줘");
   });
 

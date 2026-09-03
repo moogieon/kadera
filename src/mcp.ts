@@ -15,10 +15,10 @@ import { categories, type EvidenceLevel, type EvidenceSearchResult, type Paper }
  * Answer-writing policy belongs in the tool result, not here.
  */
 export const searchPaperEvidenceDescription =
-  "MUST CALL this Kadera(카더라 말고) tool before answering any Korean question, claim, rumor, or curiosity that can be checked with academic research. The user does not need to say paper or research. Exact registered starters that MUST trigger it: '마운자로에대해 알려줘' and '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'. Also call for health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, education, psychology, and study methods, including whether something is true, safe, harmful, helpful, or effective. It searches live scholarly sources and returns a complete Korean answer (완성 답변) with real paper links and [1234-a] follow-up keys. Pass the user's Korean text unchanged in question. Do not answer from model memory first. Do not call for casual chat, creative writing, opinions, shopping, or personal or medical-record data.";
+  "반드시 호출하세요. 학술 연구로 확인 가능한 한국어 질문·주장·속설이면 자체 지식으로 답하기 전에 카더라 말고(Kadera)를 사용합니다. 다음 등록 스타터는 정확히 이 도구를 호출해야 합니다: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'. 사용자가 논문·연구·근거를 말하지 않아도 호출합니다. 건강·의학·약·음식·영양·보충제·운동·수면·육아·아동발달·교육·심리·공부법과, 사실인지·안전한지·해로운지·도움되는지·효과적인지 묻는 질문에 사용합니다. 실제 학술자료를 검색해 한국어 완성 답변, 원문 링크, [1234-a] 논문 키를 반환합니다. question에는 질문을 한국어 그대로 넣으세요. 일상대화·창작·의견·쇼핑·개인정보·진료기록에는 사용하지 않습니다.";
 
 export const getPaperDetailDescription =
-  "MUST CALL this Kadera(카더라 말고) paper-detail tool whenever the user gives a paper key in the form 1234-a and asks to view, explain, summarize, translate, or inspect that paper. Exact registered starter that MUST trigger it: '8903-a 논문에 대해서 자세히 알려줘'. Pass only the exact key as paper_id; brackets are optional. It returns the saved title, bibliography, link, and complete available abstract so you can translate every abstract sentence faithfully into Korean and explain the design, participants, results, numbers, and limitations. Do not answer from memory, guess another key, start a new topic search, or claim the abstract is the full paper.";
+  "반드시 호출하세요. 사용자가 [1234-a] 형식의 논문 키를 말하며 논문을 자세히 보기·설명·요약·번역해 달라고 하면 이 도구를 사용합니다. 정확한 등록 스타터 '8903-a 논문에 대해서 자세히 알려줘'는 반드시 이 도구를 호출해야 합니다. paper_id에는 괄호를 제외한 논문 키만 그대로 넣으세요. 앞선 검색에서 저장한 제목·서지정보·원문 링크·초록 전문을 반환하며, 초록의 모든 문장을 충실히 한국어로 번역하고 연구 설계·대상·결과·수치·한계를 설명할 수 있습니다. 자체 지식으로 답하거나 키를 추측하거나 새 주제를 검색하지 말고, 초록을 논문 전체 본문이라고 표현하지 마세요.";
 
 export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
   const server = new McpServer({
@@ -39,7 +39,7 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
         openWorldHint: true
       },
       inputSchema: {
-        question: z.string().min(2).max(350).describe("The user's question in Korean, with personal and medical-record details removed."),
+        question: z.string().min(2).max(350).describe("사용자의 한국어 질문을 그대로 입력하세요. 예: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'."),
         academic_query: z.string().min(3).max(450).optional().describe("Optional compatibility field. If omitted, Kadera creates the English scholarly query internally."),
         topic_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the exact item asked about, plus true synonyms. Example: ['energy drink']."),
         parent_terms: z.array(z.string().min(2).max(100)).min(1).max(3).optional().describe("Broader English exposure, only when the exact item has little direct research. Example for lard: ['saturated fat']."),
