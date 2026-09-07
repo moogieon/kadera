@@ -76,6 +76,12 @@ export interface HostEvidenceInput {
   category?: Category;
 }
 
+// Leave enough of Kakao Tools' 3-second p99 budget for the public proxy,
+// network transit, filtering, and serialization. Source calls run in
+// parallel, so extending this window does not improve already-fast providers;
+// it only makes the whole tool miss the host deadline when one provider hangs.
+export const hostEvidenceSearchBudgetMs = 1_800;
+
 interface FastEvidenceOptions {
   planWithAi?: boolean;
   plannerTimeoutMs?: number;
@@ -259,7 +265,7 @@ export class ClaimCheckerService {
         hostOutcomeContextQuery,
         // Source calls that miss this window are omitted from this response;
         // the host receives the papers that completed in time.
-        searchTimeoutMs: 2_400
+        searchTimeoutMs: hostEvidenceSearchBudgetMs
       }
     );
     const labelledEvidence: EvidenceSearchResult = {

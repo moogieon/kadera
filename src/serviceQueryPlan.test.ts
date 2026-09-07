@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { knownHostQuestionPlan } from "./service.js";
+import { hostEvidenceSearchBudgetMs, knownHostQuestionPlan } from "./service.js";
+
+it("reserves proxy and serialization time inside Kakao's three-second deadline", () => {
+  expect(hostEvidenceSearchBudgetMs).toBeLessThanOrEqual(1_800);
+});
 
 describe("known MCP question plans", () => {
   it("keeps creatine as the exposure and hair loss as the outcome", () => {
