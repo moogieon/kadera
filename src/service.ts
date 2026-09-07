@@ -1575,6 +1575,27 @@ export function knownHostQuestionPlan(
       category
     };
   }
+  if (/(제로|무당|무설탕|다이어트)\s*(?:탄산|콜라|음료)|(?:zero|diet)\s*(?:soda|cola|soft drink)/i.test(normalized) &&
+    /(몸|건강|나쁘|좋|안전|위험|health|safe|harm)/i.test(normalized)) {
+    return {
+      academicQuery: "artificially sweetened beverages non-sugar-sweetened beverages sugar-sweetened beverages health outcomes systematic review meta-analysis randomized trial cohort",
+      topicTerms: ["artificially sweetened beverages", "non-sugar-sweetened beverages", "diet beverages"],
+      // This is a broad health question. Leaving the endpoint open keeps
+      // topic-level reviews and prevents a generic phrase such as "adverse
+      // effects" from retrieving unrelated treatment-safety papers.
+      outcomeTerms: [],
+      category
+    };
+  }
+  if (/(손\s*필기|손으로\s*(?:쓰|필기)|longhand|handwriting)/i.test(normalized) &&
+    /(타이핑|노트북|키보드|typing|laptop)/i.test(normalized)) {
+    return {
+      academicQuery: "longhand note taking handwriting laptop typed note taking learning performance memory systematic review meta-analysis",
+      topicTerms: ["longhand note taking", "handwriting", "laptop note taking", "typed note taking"],
+      outcomeTerms: [],
+      category
+    };
+  }
   return undefined;
 }
 

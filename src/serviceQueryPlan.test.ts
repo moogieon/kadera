@@ -17,4 +17,21 @@ describe("known MCP question plans", () => {
     expect(plan?.outcomeTerms).toEqual(["weight loss", "glycemic control", "adverse events"]);
     expect(plan?.academicQuery).toContain("tirzepatide");
   });
+
+  it("plans the zero-soda starter without a generic adverse-effects endpoint", () => {
+    const plan = knownHostQuestionPlan("제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?", "nutrition");
+
+    expect(plan?.topicTerms).toContain("artificially sweetened beverages");
+    expect(plan?.outcomeTerms).toEqual([]);
+    expect(plan?.academicQuery).toContain("sugar-sweetened beverages");
+    expect(plan?.academicQuery).not.toMatch(/\badverse effects\b/i);
+  });
+
+  it("plans the handwriting-versus-typing starter without a model call", () => {
+    const plan = knownHostQuestionPlan("손필기가 타이핑보다 공부에 더 좋아?", "education");
+
+    expect(plan?.topicTerms).toEqual(expect.arrayContaining(["longhand note taking", "laptop note taking"]));
+    expect(plan?.outcomeTerms).toEqual([]);
+    expect(plan?.academicQuery).toContain("learning performance");
+  });
 });
