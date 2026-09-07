@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatHostEvidenceForMcp,
+  formatCompactHostEvidenceForMcp,
   formatCompletedHostAnswer,
   formatPaperDetailForMcp,
   findMcpEvidence,
@@ -247,6 +248,32 @@ function paper(overrides: Partial<Paper>): Paper {
 }
 
 describe("MCP evidence package", () => {
+  it("returns one compact curated result for Kakao instead of duplicated host instructions", () => {
+    const selected = paper({
+      sourceId: "zero-soda",
+      title: "Health Effects of Sugar-Sweetened and Artificially Sweetened Beverages",
+      abstract: `RESULTS: ${"Artificially sweetened beverages were compared with sugar-sweetened beverages. ".repeat(12)}`
+    });
+    const text = formatCompactHostEvidenceForMcp({
+      category: "nutrition",
+      queryTerms: ["artificially sweetened beverages"],
+      hostTopicTerms: ["artificially sweetened beverages"],
+      retrievedPaperCount: 55,
+      sourceErrors: [],
+      sourceTraces: [],
+      papers: [selected]
+    }, [{ paperId: "4656-j", paper: selected }]);
+
+    expect(text).toMatch(/^## 카더라 논문 검색 완료/);
+    expect(text).toContain("검색에 성공했습니다");
+    expect(text).toContain("후보 55편");
+    expect(text).toContain("[4656-j]");
+    expect(text).toContain("[원문 보기]");
+    expect(text).toContain("4656-j 논문 자세히 알려줘");
+    expect(text).not.toContain("최종 답변은 다음 로컬 Kadera 형식");
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(2_000);
+  });
+
   it("asks the host to preserve the detailed local Kadera answer structure", () => {
     const text = formatHostEvidenceForMcp({
       category: "nutrition",

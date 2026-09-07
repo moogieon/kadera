@@ -117,7 +117,7 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
       // displayed as if they helped settle the user's actual question.
       const references = directReferences.length > 0 ? directReferences : savedReferences;
       const displayEvidence = { ...evidence, papers: references.map((reference) => reference.paper) };
-      const evidencePacket = formatHostEvidenceForMcp(displayEvidence, references);
+      const evidencePacket = formatCompactHostEvidenceForMcp(displayEvidence, references);
       const answerSources = hostAnswerSources(displayEvidence, references);
       const localization = await localizeHostAnswerWithinBudget(
         () => service.localizeHostMcpPapers(question, answerSources)
@@ -126,8 +126,10 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
         ? formatCompletedHostAnswer(displayEvidence, references, answerSources, localization)
         : undefined;
       return {
-        content: [{ type: "text", text: completedAnswer ?? evidencePacket }],
-        structuredContent: hostEvidenceStructuredContent(evidence, savedReferences)
+        // Kakao asks non-widget tools for one small, curated Markdown result.
+        // Repeating the abstracts in structuredContent made the public result
+        // 13 KB and caused the host to discard an otherwise successful call.
+        content: [{ type: "text", text: completedAnswer ?? evidencePacket }]
       };
     }
   );
@@ -419,6 +421,45 @@ export function formatHostEvidenceForMcp(
     ].join("\n"))
   ];
   return lines.join("\n\n");
+}
+
+export function formatCompactHostEvidenceForMcp(
+  evidence: EvidenceSearchResult,
+  references: PaperReferenceRecord[] = []
+): string {
+  const papers = hostEvidencePapers(evidence);
+  if (papers.length === 0) return noUsableEvidenceNotice(evidence);
+  const glossary = evidence.glossary ?? [];
+  const blocks = papers.map((paper, index) => {
+    const reference = references[index];
+    const paperId = reference?.paperId ?? `paper-${index + 1}`;
+    const title = shortenMcpText(paper.title, 180);
+    const result = shortenMcpText(sourceResultExcerpt(paper.abstract), 320);
+    return [
+      `### [${paperId}] ${title}`,
+      `- ${paper.year ? `${paper.year}년 · ` : ""}${evidenceLevelLabel(paper.evidenceLevel)} · ${hostEvidenceScopeLabel(hostEvidenceScope(paper, evidence))}`,
+      `- 초록 결과: ${result}`,
+      `- [원문 보기](${paper.url})`
+    ].join("\n");
+  });
+  const followUpId = references[0]?.paperId;
+  return [
+    "## 카더라 논문 검색 완료",
+    `검색에 성공했습니다. 초록이 있는 후보 ${evidence.retrievedPaperCount ?? papers.length}편 중 대표 논문 ${papers.length}편을 확인했습니다.`,
+    ...(glossary.length > 0
+      ? [`용어 대응: ${glossary.map((entry) => `${entry.term} = ${entry.askedAs}`).join(" · ")}`]
+      : []),
+    "아래 초록 결과만 근거로 질문에 먼저 한 문장으로 답한 뒤, 핵심 수치와 한계를 자연스러운 한국어로 설명하세요. 관찰된 연관성을 인과관계로 바꾸거나 논문에 없는 사실을 추가하지 마세요.",
+    ...blocks,
+    ...(followUpId
+      ? ["## 논문을 더 자세히 보고 싶다면", `“${followUpId} 논문 자세히 알려줘”라고 물으면 저장된 초록을 한국어로 자세히 확인할 수 있습니다.`]
+      : [])
+  ].join("\n\n");
+}
+
+function shortenMcpText(value: string, maxLength: number): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength - 1).trimEnd()}…` : clean;
 }
 
 interface HostAnswerSource extends HostMcpLocalizationSource {
