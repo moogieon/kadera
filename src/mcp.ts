@@ -23,6 +23,34 @@ export const getPaperDetailDescription =
 export const kaderaServerInstructions =
   "For every Korean user question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods, call search_paper_evidence before answering. Do not answer those questions from model memory, even when the user does not mention papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.";
 
+// A cached localization resolves on the next microtask. A cold localization
+// calls a second model and took 16+ seconds in production, long after Kakao's
+// 3-second tool deadline. Give an already-warm answer a tiny chance to arrive;
+// otherwise return the grounded evidence packet and let the host write the
+// Korean response while the localization continues in the background cache.
+export const hostMcpLocalizationBudgetMs = 25;
+
+export async function localizeHostAnswerWithinBudget(
+  localize: () => Promise<HostMcpLocalization | undefined>,
+  timeoutMs = hostMcpLocalizationBudgetMs
+): Promise<HostMcpLocalization | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const localization = localize().catch((error: unknown) => {
+    console.error(`[mcp-answer] localization failed: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  });
+  try {
+    return await Promise.race([
+      localization,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), Math.max(0, timeoutMs));
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
   const server = new McpServer({
     name: "kadera-malgo",
@@ -91,12 +119,9 @@ export function createKaderaMcpServer(service: ClaimCheckerService): McpServer {
       const displayEvidence = { ...evidence, papers: references.map((reference) => reference.paper) };
       const evidencePacket = formatHostEvidenceForMcp(displayEvidence, references);
       const answerSources = hostAnswerSources(displayEvidence, references);
-      const localization = await service
-        .localizeHostMcpPapers(question, answerSources)
-        .catch((error: unknown) => {
-          console.error(`[mcp-answer] localization failed: ${error instanceof Error ? error.message : String(error)}`);
-          return undefined;
-        });
+      const localization = await localizeHostAnswerWithinBudget(
+        () => service.localizeHostMcpPapers(question, answerSources)
+      );
       const completedAnswer = localization
         ? formatCompletedHostAnswer(displayEvidence, references, answerSources, localization)
         : undefined;

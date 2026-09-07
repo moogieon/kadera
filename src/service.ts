@@ -112,6 +112,7 @@ export class ClaimCheckerService {
   private readonly cache: ClaimCache;
   private readonly hostQuestionPlans = new Map<string, { plan: FastHostQueryPlan; expiresAt: number }>();
   private readonly hostMcpLocalizations = new Map<string, { localization: HostMcpLocalization; expiresAt: number }>();
+  private readonly hostMcpLocalizationsInFlight = new Map<string, Promise<HostMcpLocalization | undefined>>();
   private readonly pubMed: PubMedClient;
   private readonly semanticScholar: SemanticScholarClient;
   private readonly openAlex: OpenAlexClient;
@@ -309,11 +310,20 @@ export class ClaimCheckerService {
     const cached = this.hostMcpLocalizations.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.localization;
     if (cached) this.hostMcpLocalizations.delete(cacheKey);
-    const localization = await this.openai.localizeHostMcpPapers(question, sources);
-    if (!localization) return undefined;
-    const ttlMs = Math.max(60_000, this.config.hostEvidenceCacheTtlMs);
-    this.hostMcpLocalizations.set(cacheKey, { localization, expiresAt: Date.now() + ttlMs });
-    return localization;
+    const inFlight = this.hostMcpLocalizationsInFlight.get(cacheKey);
+    if (inFlight) return inFlight;
+    const request = this.openai.localizeHostMcpPapers(question, sources)
+      .then((localization) => {
+        if (!localization) return undefined;
+        const ttlMs = Math.max(60_000, this.config.hostEvidenceCacheTtlMs);
+        this.hostMcpLocalizations.set(cacheKey, { localization, expiresAt: Date.now() + ttlMs });
+        return localization;
+      })
+      .finally(() => {
+        this.hostMcpLocalizationsInFlight.delete(cacheKey);
+      });
+    this.hostMcpLocalizationsInFlight.set(cacheKey, request);
+    return request;
   }
 
   async findEvidence(input: FindEvidenceInput, options: FullEvidenceOptions = {}): Promise<EvidenceSearchResult> {

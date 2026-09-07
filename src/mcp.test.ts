@@ -6,10 +6,12 @@ import {
   findMcpEvidence,
   getPaperDetailDescription,
   kaderaServerInstructions,
+  localizeHostAnswerWithinBudget,
   noUsableEvidenceNotice,
   searchPaperEvidenceDescription,
   untranslatedQueryNotice
 } from "./mcp.js";
+import type { HostMcpLocalization } from "./clients/openai.js";
 import type { EvidenceSearchResult, Paper } from "./types.js";
 
 describe("Kakao Tools tool manifest", () => {
@@ -159,6 +161,29 @@ describe("paper follow-up flow", () => {
 });
 
 describe("completed MCP answer", () => {
+  it("does not hold a cold tool call open while a second model writes the Korean answer", async () => {
+    let finishLocalization!: (value: undefined) => void;
+    const coldLocalization = new Promise<undefined>((resolve) => {
+      finishLocalization = resolve;
+    });
+    const startedAt = Date.now();
+
+    const localization = await localizeHostAnswerWithinBudget(() => coldLocalization, 5);
+
+    expect(localization).toBeUndefined();
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    finishLocalization(undefined);
+  });
+
+  it("still uses an already-cached localization", async () => {
+    const cached: HostMcpLocalization = {
+      conclusionKo: "아니요, 현재 근거로는 그렇다고 보기 어렵습니다.",
+      papers: []
+    };
+
+    await expect(localizeHostAnswerWithinBudget(() => Promise.resolve(cached), 5)).resolves.toBe(cached);
+  });
+
   it("returns the fixed local Kadera sections without exposing answer-writing instructions", () => {
     const selected = paper({
       sourceId: "creatine-hair",
