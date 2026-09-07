@@ -5,6 +5,7 @@ import {
   formatPaperDetailForMcp,
   findMcpEvidence,
   getPaperDetailDescription,
+  kaderaServerInstructions,
   noUsableEvidenceNotice,
   searchPaperEvidenceDescription,
   untranslatedQueryNotice
@@ -22,15 +23,22 @@ describe("Kakao Tools tool manifest", () => {
   });
 
   it("matches every registered starter with an explicit call instruction", () => {
-    expect(searchPaperEvidenceDescription).toMatch(/^Kadera \(카더라 말고\) searches/);
-    expect(searchPaperEvidenceDescription).toContain("Always call");
+    expect(searchPaperEvidenceDescription).toMatch(/^Always call this tool before answering/);
+    expect(searchPaperEvidenceDescription).toContain("Do not answer from model memory");
     expect(searchPaperEvidenceDescription).toContain("마운자로에대해 알려줘");
     expect(searchPaperEvidenceDescription).toContain("제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?");
+    expect(searchPaperEvidenceDescription).toContain("손필기가 타이핑보다 공부에 더 좋아?");
     expect(getPaperDetailDescription).toMatch(/^Kadera \(카더라 말고\) retrieves/);
     expect(getPaperDetailDescription).toContain("Always call");
     expect(getPaperDetailDescription).toContain("8903-a 논문에 대해서 자세히 알려줘");
-    expect(Buffer.byteLength(searchPaperEvidenceDescription, "utf8")).toBeLessThan(700);
+    expect(Buffer.byteLength(searchPaperEvidenceDescription, "utf8")).toBeLessThan(800);
     expect(Buffer.byteLength(getPaperDetailDescription, "utf8")).toBeLessThan(500);
+  });
+
+  it("tells MCP hosts to retrieve evidence before answering from memory", () => {
+    expect(kaderaServerInstructions).toContain("call search_paper_evidence before answering");
+    expect(kaderaServerInstructions).toContain("Do not answer those questions from model memory");
+    expect(kaderaServerInstructions).toContain("call get_paper_detail");
   });
 
   it("spends the budget on the calling decision, not on answer-writing policy", () => {
