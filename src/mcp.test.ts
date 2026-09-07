@@ -271,6 +271,7 @@ describe("MCP evidence package", () => {
     expect(text).toContain("[원문 보기]");
     expect(text).toContain("4656-j 논문 자세히 알려줘");
     expect(text).toContain("논문 키와 원문 링크를 생략하지 마세요");
+    expect(text).toContain("초록에 없는 하루 섭취량·권장량·안전 기준을 만들지 마세요");
     expect(text).not.toContain("최종 답변은 다음 로컬 Kadera 형식");
     expect(Buffer.byteLength(text, "utf8")).toBeLessThan(2_000);
   });
