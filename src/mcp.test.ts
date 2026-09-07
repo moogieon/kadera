@@ -34,8 +34,10 @@ describe("Kakao Tools tool manifest", () => {
     expect(getPaperDetailDescription).toMatch(/^Kadera \(카더라 말고\) retrieves/);
     expect(getPaperDetailDescription).toContain("Always call");
     expect(getPaperDetailDescription).toContain("8903-a 논문에 대해서 자세히 알려줘");
+    expect(getPaperDetailDescription).toContain("방금 말한 2026년 논문 자세히 알려줘");
+    expect(getPaperDetailDescription).toContain("previous search tool result");
     expect(Buffer.byteLength(searchPaperEvidenceDescription, "utf8")).toBeLessThan(800);
-    expect(Buffer.byteLength(getPaperDetailDescription, "utf8")).toBeLessThan(500);
+    expect(Buffer.byteLength(getPaperDetailDescription, "utf8")).toBeLessThan(800);
   });
 
   it("tells MCP hosts to retrieve evidence before answering from memory", () => {

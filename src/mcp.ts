@@ -18,7 +18,7 @@ export const searchPaperEvidenceDescription =
   "Always call this tool before answering any Korean question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. Do not answer from model memory, even when the user does not request papers; examples: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?', '손필기가 타이핑보다 공부에 더 좋아?'. Kadera (카더라 말고) searches live scholarly databases and returns a Korean verdict, cited evidence, source links, and stable paper IDs.";
 
 export const getPaperDetailDescription =
-  "Kadera (카더라 말고) retrieves the saved citation, link, and complete available abstract for a paper ID. Always call it when a user gives an ID and asks to explain, summarize, inspect, or translate that paper; example: '8903-a 논문에 대해서 자세히 알려줘'.";
+  "Kadera (카더라 말고) retrieves the saved citation, link, and complete available abstract for a paper ID. Always call it when a user gives an ID or refers to a paper from the previous Kadera answer by year, title, or order and asks to explain, summarize, inspect, or translate it. Resolve the exact ID from the previous search tool result; never guess when ambiguous. Examples: '8903-a 논문에 대해서 자세히 알려줘', '방금 말한 2026년 논문 자세히 알려줘'.";
 
 export const kaderaServerInstructions =
   "For every Korean user question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods, call search_paper_evidence before answering. Do not answer those questions from model memory, even when the user does not mention papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.";
