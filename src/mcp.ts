@@ -18,7 +18,7 @@ export const searchPaperEvidenceDescription =
   "Always call this tool before answering any Korean question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. Do not answer from model memory, even when the user does not request papers; examples: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?', '손필기가 타이핑보다 공부에 더 좋아?'. Kadera (카더라 말고) searches live scholarly databases and returns a Korean verdict, cited evidence, source links, and stable paper IDs.";
 
 export const getPaperDetailDescription =
-  "Kadera (카더라 말고) retrieves the saved citation, link, and complete available abstract for a paper ID. Always call it when a user gives an ID or refers to a paper from the previous Kadera answer by year, title, or order and asks to explain, summarize, inspect, or translate it. Resolve the exact ID from the previous search tool result; never guess when ambiguous. Examples: '8903-a 논문에 대해서 자세히 알려줘', '방금 말한 2026년 논문 자세히 알려줘'.";
+  "Kadera (카더라 말고) opens a saved paper ID for a Korean explanation. Always call when a user gives an ID or refers to a previous Kadera paper by year, title, or order and asks to explain, inspect, show, or translate it. Default: write entirely in natural Korean; translate the title, explain every abstract section, preserve numbers, end with the source link, and never paste English prose. For '초록 전체 번역', translate every sentence. Show English only for explicit '영문 원문 그대로'. Resolve the exact ID from the previous search result; never guess if ambiguous. Examples: '8903-a 논문에 대해서 자세히 알려줘', '방금 말한 2026년 논문 자세히 알려줘'.";
 
 export const kaderaServerInstructions =
   "For every Korean user question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods, call search_paper_evidence before answering. Do not answer those questions from model memory, even when the user does not mention papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.";
@@ -550,9 +550,13 @@ export function formatPaperDetailForMcp(reference: PaperReferenceRecord): string
     `## [${paperId}] 논문 상세 자료`,
     "현재 Kadera가 확보해 저장한 원문 범위는 논문의 초록 전문입니다. 논문 전체 본문을 확보했다고 말하지 마세요.",
     [
-      "사용자에게 반드시 한국어로 다음 순서로 답하세요:",
+      "사용자의 표현에 맞춰 반드시 다음 원칙으로 답하세요:",
+      "- '자세히 알려줘' 또는 '원문 보여줘' — 영문을 붙여넣지 말고, 한국어 제목과 한줄 결론부터 시작해 아래 초록의 모든 구획을 자연스러운 한국어로 자세히 설명",
+      "- '초록 전체 번역' — 아래 원문 초록의 모든 문장을 순서대로 빠짐없이 번역하고, BACKGROUND·METHODS·RESULTS·CONCLUSIONS 같은 구획도 한국어로 표시",
+      "- '영문 원문 그대로' — 사용자가 이 표현으로 영어 출력을 명시한 경우에만 영문 초록을 그대로 표시",
+      "기본 답변 순서:",
       "1) '한줄 결론' — 이 논문 한 편이 실제로 말하는 바를 평이하게 설명",
-      "2) '초록 전체 번역' — 아래 원문 초록의 모든 문장을 순서대로 빠짐없이 번역하고, BACKGROUND·METHODS·RESULTS·CONCLUSIONS 같은 구획도 한국어로 표시",
+      "2) '초록 상세 내용' 또는 사용자가 요청한 '초록 전체 번역'",
       "3) '연구 설계와 대상' — 초록에 적힌 내용만 정리",
       "4) '핵심 결과' — 비교 대상, 방향, 효과크기, 신뢰구간 등 초록에 있는 수치를 그대로 보존",
       "5) '이 논문만으로 말할 수 없는 것' — 초록에서 확인되는 한계와 한 편의 연구를 일반화할 때의 한계를 구분",
@@ -570,7 +574,9 @@ export function formatPaperDetailForMcp(reference: PaperReferenceRecord): string
     ...(paper.doi ? [`- DOI: ${paper.doi}`] : []),
     `- 원문 보기 링크: ${paper.url}`,
     "### 번역할 원문 초록",
-    paper.abstract?.trim() || "이 논문은 저장된 초록을 제공하지 않습니다."
+    paper.abstract?.trim() || "이 논문은 저장된 초록을 제공하지 않습니다.",
+    "### 최종 출력 규칙",
+    `사용자가 '영문 원문 그대로'라고 명시하지 않았다면 위 영문을 복사하지 말고 제목과 설명을 자연스러운 한국어로 작성하세요. 수치는 그대로 보존하고, 답변 마지막 줄은 반드시 '[원문 보기](${paper.url})' 링크로 끝내세요.`
   ].join("\n\n");
 }
 

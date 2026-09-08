@@ -31,11 +31,14 @@ describe("Kakao Tools tool manifest", () => {
     expect(searchPaperEvidenceDescription).toContain("마운자로에대해 알려줘");
     expect(searchPaperEvidenceDescription).toContain("제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?");
     expect(searchPaperEvidenceDescription).toContain("손필기가 타이핑보다 공부에 더 좋아?");
-    expect(getPaperDetailDescription).toMatch(/^Kadera \(카더라 말고\) retrieves/);
+    expect(getPaperDetailDescription).toMatch(/^Kadera \(카더라 말고\) opens/);
     expect(getPaperDetailDescription).toContain("Always call");
     expect(getPaperDetailDescription).toContain("8903-a 논문에 대해서 자세히 알려줘");
     expect(getPaperDetailDescription).toContain("방금 말한 2026년 논문 자세히 알려줘");
-    expect(getPaperDetailDescription).toContain("previous search tool result");
+    expect(getPaperDetailDescription).toContain("previous search result");
+    expect(getPaperDetailDescription).toContain("entirely in natural Korean");
+    expect(getPaperDetailDescription).toContain("never paste English prose");
+    expect(getPaperDetailDescription).toContain("영문 원문 그대로");
     expect(Buffer.byteLength(searchPaperEvidenceDescription, "utf8")).toBeLessThan(800);
     expect(Buffer.byteLength(getPaperDetailDescription, "utf8")).toBeLessThan(800);
   });
@@ -159,6 +162,9 @@ describe("paper follow-up flow", () => {
     expect(text).toContain("영문 원제와 PubMed·Europe PMC 같은 데이터베이스 이름은 사용자가 요청하지 않는 한 노출하지 마세요");
     expect(text).toContain("최종 답변에는 한국어 제목만 표시");
     expect(text).toContain("답변 마지막 줄은 반드시 '[원문 보기](https://pubmed.ncbi.nlm.nih.gov/1/)' 링크로 끝내세요");
+    expect(text).toContain("'자세히 알려줘' 또는 '원문 보여줘'");
+    expect(text).toContain("'영문 원문 그대로'라고 명시하지 않았다면 위 영문을 복사하지 말고");
+    expect(text.lastIndexOf("### 최종 출력 규칙")).toBeGreaterThan(text.indexOf(stored.abstract!));
     expect(text).toContain("https://pubmed.ncbi.nlm.nih.gov/1/");
   });
 });
