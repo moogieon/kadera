@@ -553,7 +553,7 @@ function paperScopeNotes(paper: Paper): string[] {
   const sentences = splitAbstractSentences(abstract);
   const population = sentences.find((sentence) =>
     /\b(?:participants?|adults?|children|adolescents?|toddlers?|patients?|men|women)\b/i.test(sentence) &&
-    /\b(?:included|includ(?:ing|es)|involv\w*|aged|years old|enrolled|recruited|eligible|baseline)\b/i.test(sentence));
+    /\b(?:included|includ(?:ing|es)|involv\w*|identified|aged|years old|enrolled|recruited|eligible|baseline)\b/i.test(sentence));
   const certainty = sentences.filter((sentence) =>
     /\b(?:certainty|quality of evidence|evidence was rated|cross-sectional|very low|limitations?)\b/i.test(sentence)).slice(0, 2);
   return [
@@ -676,7 +676,7 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
     // the full pipeline so a result about packaging, animal feed, or pork-fat
     // preservation cannot reach the host just because it shares topic words.
     .filter((paper) => isConsumerHealthEvidenceCandidate(paper))
-    .filter((paper) => !isUnrequestedSleepTreatment(paper, hostTopicTerms(evidence)))
+    .filter((paper) => !isUnrequestedSleepContext(paper, hostTopicTerms(evidence)))
     .filter((paper) => !/\b(?:protocol|study protocol)\b/i.test(paper.title))
     .filter((paper) => {
       const key = `${paper.doi ?? paper.sourceId}|${paper.title}`.toLowerCase();
@@ -765,10 +765,14 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
   return uniqueHostPapers(selected).slice(0, 5);
 }
 
-function isUnrequestedSleepTreatment(paper: Paper, topics: string[]): boolean {
+function isUnrequestedSleepContext(paper: Paper, topics: string[]): boolean {
   if (!topics.some((term) => /\b(?:bedtime|sleep timing|sleep onset)\b/i.test(term))) return false;
   const treatments = /\b(?:light (?:treatment|therapy)|lavender|laughter yoga|reflexology|mindfulness|melatonin)\b/i;
-  return treatments.test(paper.title) && !topics.some((term) => treatments.test(term));
+  if (treatments.test(paper.title) && !topics.some((term) => treatments.test(term))) return true;
+  // A lockdown changing bedtime studies the cause of a timing change, not
+  // the health consequences of late bedtime. Keep it only when requested.
+  const disruptions = /\b(?:covid[- ]?19|lockdown|pandemic)\b/i;
+  return disruptions.test(paper.title) && !topics.some((term) => disruptions.test(term));
 }
 
 function hasReportableSourceResult(paper: Paper): boolean {

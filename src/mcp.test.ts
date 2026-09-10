@@ -41,11 +41,15 @@ describe("Kakao Tools tool manifest", () => {
   it("rejects unrelated sleep therapies and keeps population and certainty in the evidence packet", () => {
     const selected = paper({title: "Sleep timing and health in children and adolescents", abstract: "METHODS: We included children aged 5 to 18 years. RESULTS: Later sleep timing was associated with poorer health. The quality of evidence was rated as very low."});
     const unrelated = paper({sourceId: "therapy", title: "Morning light treatment with stable sleep timing: a randomized trial", abstract: "RESULTS: Both light groups improved sleep timing and pain."});
-    const evidence: EvidenceSearchResult = {category: "health", queryTerms: ["late bedtime"], hostTopicTerms: ["late bedtime", "sleep timing"], hostOutcomeTerms: [], papers: [selected, unrelated], sourceErrors: [], sourceTraces: []};
+    const disruption = paper({sourceId: "lockdown", title: "Changes in sleep timing during COVID-19 lockdown", abstract: "RESULTS: Sleep duration increased and sleep timing was delayed."});
+    const evidence: EvidenceSearchResult = {category: "health", queryTerms: ["late bedtime"], hostTopicTerms: ["late bedtime", "sleep timing"], hostOutcomeTerms: [], papers: [selected, unrelated, disruption], sourceErrors: [], sourceTraces: []};
     const text = formatCompactHostEvidenceForMcp(evidence, [{paperId: "7017-z", paper: selected}]);
     expect(text).toContain("children aged 5 to 18");
     expect(text).toContain("very low");
     expect(text).not.toContain("Morning light");
+    expect(text).not.toContain("COVID-19");
+    const requested = formatCompactHostEvidenceForMcp({...evidence, hostTopicTerms: ["sleep timing", "COVID-19"]});
+    expect(requested).toContain("COVID-19 lockdown");
     expect(text).toContain("취침 시각·용량·생활 예시");
     const empty = formatCompactHostEvidenceForMcp({...evidence, papers: [paper({title: "Laughter yoga and sleep quality", abstract: "RESULTS: Sleep quality improved."})], retrievedPaperCount: 1});
     expect(empty).not.toContain("Laughter yoga");
