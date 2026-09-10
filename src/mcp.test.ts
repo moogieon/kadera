@@ -16,6 +16,41 @@ import type { HostMcpLocalization } from "./clients/openai.js";
 import type { EvidenceSearchResult, Paper } from "./types.js";
 
 describe("Kakao Tools tool manifest", () => {
+  it("uses measured findings and actual participants instead of background claims", () => {
+    const selected = paper({
+      title: "Sleep timing and body composition in toddlers",
+      abstract: "Good sleep quality is associated with reduced adiposity in older children and adults. This cross-sectional study examined baseline data from 48 toddlers aged 1 to <3 years. Nighttime sleep onset time was positively associated with waist-to-height ratio (beta = 0.004, <i>p</i> = 0.04)."
+    });
+    const text = formatCompactHostEvidenceForMcp({category: "health", queryTerms: ["sleep timing"], hostTopicTerms: ["sleep timing"], papers: [selected], sourceErrors: [], sourceTraces: []});
+    expect(text).toContain("48 toddlers aged 1 to <3 years");
+    expect(text).toContain("waist-to-height ratio");
+    expect(text).not.toContain("reduced adiposity in older children and adults");
+  });
+
+  it("excludes indexed clinical trial protocols whose titles do not say protocol", () => {
+    const protocol = paper({
+      title: "A randomized controlled trial to assess if changing sleep timing can improve glucose metabolism",
+      publicationTypes: ["Clinical Trial Protocol", "Journal Article"],
+      abstract: "<h4>Background</h4>Late sleep timing is associated with higher diabetes risk.<h4>Methods</h4>60 adults will be recruited.<h4>Discussion</h4>We aim to improve glucose control."
+    });
+    const text = formatCompactHostEvidenceForMcp({category: "health", queryTerms: ["sleep timing"], hostTopicTerms: ["sleep timing"], papers: [protocol], retrievedPaperCount: 1, sourceErrors: [], sourceTraces: []});
+    expect(text).toContain("대표 논문은 0편");
+    expect(text).not.toContain(protocol.title);
+  });
+
+  it("rejects unrelated sleep therapies and keeps population and certainty in the evidence packet", () => {
+    const selected = paper({title: "Sleep timing and health in children and adolescents", abstract: "METHODS: We included children aged 5 to 18 years. RESULTS: Later sleep timing was associated with poorer health. The quality of evidence was rated as very low."});
+    const unrelated = paper({sourceId: "therapy", title: "Morning light treatment with stable sleep timing: a randomized trial", abstract: "RESULTS: Both light groups improved sleep timing and pain."});
+    const evidence: EvidenceSearchResult = {category: "health", queryTerms: ["late bedtime"], hostTopicTerms: ["late bedtime", "sleep timing"], hostOutcomeTerms: [], papers: [selected, unrelated], sourceErrors: [], sourceTraces: []};
+    const text = formatCompactHostEvidenceForMcp(evidence, [{paperId: "7017-z", paper: selected}]);
+    expect(text).toContain("children aged 5 to 18");
+    expect(text).toContain("very low");
+    expect(text).not.toContain("Morning light");
+    expect(text).toContain("취침 시각·용량·생활 예시");
+    const empty = formatCompactHostEvidenceForMcp({...evidence, papers: [paper({title: "Laughter yoga and sleep quality", abstract: "RESULTS: Sleep quality improved."})], retrievedPaperCount: 1});
+    expect(empty).not.toContain("Laughter yoga");
+    expect(empty).toContain("대표 논문은 0편");
+  });
   it("keeps the description inside the 1,024-character Kakao Tools limit", () => {
     expect(searchPaperEvidenceDescription.length).toBeLessThanOrEqual(1_024);
     expect(getPaperDetailDescription.length).toBeLessThanOrEqual(1_024);
@@ -575,7 +610,7 @@ describe("MCP evidence package", () => {
       expect(text).toContain("18% higher risk");
     });
 
-    it("labels a paper the supplied topic cannot be matched against as unverified scope", () => {
+    it("does not fill an unmatched topic with unrelated candidate papers", () => {
       const text = formatHostEvidenceForMcp({
         ...evidenceWith(["energy drink"]),
         papers: [paper({
@@ -584,8 +619,8 @@ describe("MCP evidence package", () => {
           abstract: "RESULTS: Higher intake was associated with a 12% higher risk of colorectal cancer."
         })]
       });
-      expect(text).toContain("주제 관련 근거(정확 일치는 확인되지 않음)");
-      expect(text).toContain("참고 근거로만 소개하고");
+      expect(text).toContain("대표 논문은 0편");
+      expect(text).not.toContain("Dietary patterns");
       expect(text).not.toContain("- 근거 범위: 직접 주제");
     });
 

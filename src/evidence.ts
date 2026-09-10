@@ -993,7 +993,7 @@ function titleCentersUnrequestedCoExposure(paper: Paper, intent: ResearchIntent)
 
 function isStudyProtocolPaper(paper: Paper): boolean {
   const text = `${paper.title} ${paper.publicationTypes.join(" ")}`.toLowerCase();
-  return /\b(?:study protocol|protocol for (?:a )?(?:systematic review|meta[ -]?analysis)|systematic review(?: and meta[ -]?analysis)? protocol)\b/.test(text);
+  return /\b(?:study protocol|clinical trial protocol|protocol for (?:a )?(?:systematic review|meta[ -]?analysis)|systematic review(?: and meta[ -]?analysis)? protocol)\b/.test(text);
 }
 
 function isSweetenedBeverageBroadIntent(intent: ResearchIntent): boolean {

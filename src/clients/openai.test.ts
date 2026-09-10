@@ -30,6 +30,16 @@ describe("fast host query planning", () => {
 });
 
 describe("host MCP paper localization validation", () => {
+  it("permits participant ages from scope notes but still rejects invented ages", () => {
+    const sources = [{paperId: "7017-z", title: "Sleep timing and health", result: "Later sleep timing was associated with poorer health.", scopeNotes: ["Children aged 5 to 18 years were included. Evidence certainty was very low."]}];
+    const localized = {
+      conclusion_ko: "어린이·청소년에서는 늦은 취침과 건강의 연관성이 있지만 근거 확실성이 매우 낮습니다.",
+      papers: [{paper_id: "7017-z", title_ko: "취침 시각과 건강", result_ko: "5~18세에서 늦은 취침과 나쁜 건강의 연관성이 있었지만 근거 확실성은 매우 낮습니다.", headline_ko: "이 연구에서는 어린이·청소년의 취침 시각과 건강에 연관성이 있었습니다."}]
+    };
+    expect(validateHostMcpLocalization(localized, sources)).toBeDefined();
+    expect(validateHostMcpLocalization({...localized, papers: [{...localized.papers[0], result_ko: "25~38세에서 늦은 취침과 나쁜 건강의 연관성이 있었습니다."}]}, sources)).toBeUndefined();
+  });
+
   it("accepts faithful Korean fields and rejects invented numbers", () => {
     const sources = [{
       paperId: "1234-a",

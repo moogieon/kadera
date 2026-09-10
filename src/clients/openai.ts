@@ -24,6 +24,7 @@ export interface HostMcpLocalizationSource {
   paperId: string;
   title: string;
   result: string;
+  scopeNotes?: string[];
 }
 
 export interface HostMcpLocalizedPaper {
@@ -207,7 +208,7 @@ export class OpenAiRagClient {
         input: [
           {
             role: "system",
-            content: "Create a compact scholarly retrieval plan. topic_terms are exposure synonyms only, never outcomes. outcome_terms are requested endpoints only. category must be exactly one allowed value. Return JSON only."
+            content: "Create a compact scholarly retrieval plan. topic_terms are exact exposure synonyms only, never outcomes or a broader parent topic. Preserve modifiers that define the question (timing, dose, route, subtype): late bedtime is not sleep or sleep quality. Do not substitute interventions that improve an outcome for the exposure being evaluated. For broad good-or-bad questions with no specific endpoint, outcome_terms must be []. Otherwise outcome_terms are only the requested endpoints. category must be exactly one allowed value. Return JSON only."
           },
           {
             role: "user",
@@ -601,6 +602,7 @@ export class OpenAiRagClient {
               "Except for standard medical abbreviations such as LDL, HbA1c, CI, RR, and drug names, write all prose in Korean. Never leave an English clause or phrase untranslated.",
               "Use only each supplied string: do not add background facts, methods, limitations, advice, or numbers.",
               "Preserve direction, comparisons, sample sizes, effect sizes, confidence intervals, and uncertainty.",
+              "Include supplied scopeNotes in result_ko as Korean population/design and certainty qualifications. Keep population and low/very-low evidence certainty in the conclusion; never generalize child-only or disease-specific evidence to everyone. Do not invent clock times, doses or practical advice.",
               "Every number or spelled-out number in result must appear in result_ko; translate English number words into digits.",
               "Translate 'evidence against the claim' as evidence that contradicts the claim, never as a failure to find evidence.",
               "conclusion_ko is the answer's one-line conclusion across the supplied papers. Answer the user's question directly in one plain Korean sentence of at most 80 characters, without study details or statistics. For a yes/no claim, begin with '네,', '아니요,', or '현재 근거만으로는'. For a broad topic request, state the main effect and main caveat. Never begin conclusion_ko with '이 연구에서는' or '이 논문에서는'.",
@@ -652,7 +654,7 @@ export function validateHostMcpLocalization(
     const headlineKo = cleanKoreanField(paper.headline_ko, 8, 180);
     if (!titleKo || !resultKo || !headlineKo) return undefined;
     if (hasUnsupportedHostNumber(titleKo, source.title)) return undefined;
-    const sourceText = `${source.title} ${source.result}`;
+    const sourceText = `${source.title} ${source.result} ${(source.scopeNotes ?? []).join(" ")}`;
     if (hasUnsupportedHostNumber(resultKo, sourceText)) return undefined;
     if (hasUnsupportedHostNumber(headlineKo, sourceText)) return undefined;
     localized.push({ paperId: source.paperId, titleKo, resultKo, headlineKo });

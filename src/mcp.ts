@@ -439,6 +439,7 @@ export function formatCompactHostEvidenceForMcp(
       `### [${paperId}] ${title}`,
       `- ${paper.year ? `${paper.year}년 · ` : ""}${evidenceLevelLabel(paper.evidenceLevel)} · ${hostEvidenceScopeLabel(hostEvidenceScope(paper, evidence))}`,
       `- 초록 결과: ${result}`,
+      ...paperScopeNotes(paper),
       `- [원문 보기](${paper.url})`
     ].join("\n");
   });
@@ -450,6 +451,7 @@ export function formatCompactHostEvidenceForMcp(
       ? [`용어 대응: ${glossary.map((entry) => `${entry.term} = ${entry.askedAs}`).join(" · ")}`]
       : []),
     "아래 초록 결과만 근거로 질문에 먼저 한 문장으로 답한 뒤, 핵심 수치와 한계를 자연스러운 한국어로 설명하세요. 관찰된 연관성을 인과관계로 바꾸지 말고, 초록에 없는 하루 섭취량·권장량·안전 기준을 만들지 마세요. 근거 문장에는 해당 논문 키를 [4656-j]처럼 표시하고, 논문 키와 원문 링크를 생략하지 마세요.",
+    "결론에서도 연구 대상과 근거 확실성을 유지하세요. 어린이·청소년 또는 특정 질환 연구만 있으면 그 집단으로 결론을 제한하세요. 초록에 없는 취침 시각·용량·생활 예시를 추가하지 마세요. 제공된 서로 다른 집단의 근거는 구분해 설명하세요.",
     ...blocks,
     ...(followUpId
       ? ["## 논문을 더 자세히 보고 싶다면", `“${followUpId} 논문 자세히 알려줘”라고 물으면 저장된 초록을 한국어로 자세히 확인할 수 있습니다.`]
@@ -480,7 +482,8 @@ function hostAnswerSources(
     year: reference.paper.year,
     designKo: evidenceLevelLabel(reference.paper.evidenceLevel),
     scopeKo: hostEvidenceScopeLabel(hostEvidenceScope(reference.paper, evidence)),
-    url: reference.paper.url
+    url: reference.paper.url,
+    scopeNotes: paperScopeNotes(reference.paper)
   }));
 }
 
@@ -526,7 +529,7 @@ export function formatCompletedHostAnswer(
     "## 상세 답변",
     `가장 직접적인 대표 연구에서는 ${primary.resultKo}`,
     contextualCount > 0
-      ? `나머지 ${contextualCount}편은 질문의 대상 또는 결과 한쪽만 다룬 보완 근거이므로, 크레아틴과 탈모를 직접 연결한 증거로 해석하지 않았습니다.`
+      ? `나머지 ${contextualCount}편은 질문의 대상 또는 결과 한쪽만 다룬 보완 근거이므로, 질문에 대한 직접 증거로 해석하지 않았습니다.`
       : "대표 논문은 질문의 대상과 결과를 직접 다룬 자료입니다.",
     "## 이번 판단에 사용한 근거",
     `초록이 있는 후보 문헌 ${evidence.retrievedPaperCount ?? sources.length}편 가운데 대표 논문 ${sources.length}편을 확인했습니다.`,
@@ -541,6 +544,22 @@ export function formatCompletedHostAnswer(
     ...followUps,
     "해당 논문의 초록 전체 번역, 연구 설계와 대상, 주요 수치, 해석할 때의 한계를 자세히 확인할 수 있습니다."
   ].filter(Boolean).join("\n\n");
+}
+
+// Keep study population and certainty outside the result excerpt: selecting a
+// striking result sentence must not silently discard these qualifications.
+function paperScopeNotes(paper: Paper): string[] {
+  const abstract = decodeAbstractText(paper.abstract ?? "").replace(/\s+/g, " ").trim();
+  const sentences = splitAbstractSentences(abstract);
+  const population = sentences.find((sentence) =>
+    /\b(?:participants?|adults?|children|adolescents?|toddlers?|patients?|men|women)\b/i.test(sentence) &&
+    /\b(?:included|includ(?:ing|es)|involv\w*|aged|years old|enrolled|recruited|eligible|baseline)\b/i.test(sentence));
+  const certainty = sentences.filter((sentence) =>
+    /\b(?:certainty|quality of evidence|evidence was rated|cross-sectional|very low|limitations?)\b/i.test(sentence)).slice(0, 2);
+  return [
+    ...(population ? [`- 대상·설계 원문(한국어로 설명): ${population}`] : []),
+    ...certainty.map((sentence) => `- 근거 한계 원문(반드시 반영): ${sentence}`)
+  ];
 }
 
 export function formatPaperDetailForMcp(reference: PaperReferenceRecord): string {
@@ -657,6 +676,7 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
     // the full pipeline so a result about packaging, animal feed, or pork-fat
     // preservation cannot reach the host just because it shares topic words.
     .filter((paper) => isConsumerHealthEvidenceCandidate(paper))
+    .filter((paper) => !isUnrequestedSleepTreatment(paper, hostTopicTerms(evidence)))
     .filter((paper) => !/\b(?:protocol|study protocol)\b/i.test(paper.title))
     .filter((paper) => {
       const key = `${paper.doi ?? paper.sourceId}|${paper.title}`.toLowerCase();
@@ -702,9 +722,8 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
 
   if (outcomeAnchors.length === 0) {
     // With no requested endpoint, a topic-centred paper is the direct answer.
-    // Preserve the old label-mismatch fallback so a host-written Korean alias
-    // cannot turn a successfully retrieved review into "no research".
-    return rank(exactFocused.length > 0 ? exactFocused : usableCandidates).slice(0, 5);
+    // Do not fill empty topic matches with unrelated retrieved papers.
+    return rank(exactTopicAnchors.length > 0 ? exactFocused : usableCandidates).slice(0, 5);
   }
 
   const outcomeMatches = (paper: Paper) =>
@@ -746,6 +765,12 @@ function hostEvidencePapers(evidence: EvidenceSearchResult): Paper[] {
   return uniqueHostPapers(selected).slice(0, 5);
 }
 
+function isUnrequestedSleepTreatment(paper: Paper, topics: string[]): boolean {
+  if (!topics.some((term) => /\b(?:bedtime|sleep timing|sleep onset)\b/i.test(term))) return false;
+  const treatments = /\b(?:light (?:treatment|therapy)|lavender|laughter yoga|reflexology|mindfulness|melatonin)\b/i;
+  return treatments.test(paper.title) && !topics.some((term) => treatments.test(term));
+}
+
 function hasReportableSourceResult(paper: Paper): boolean {
   const excerpt = sourceResultExcerpt(paper.abstract);
   return !isAbstractMethodSentence(excerpt) && abstractResultScore(excerpt) >= 15;
@@ -757,7 +782,13 @@ function sourceResultExcerpt(abstract: string | undefined): string {
     .trim();
   if (!clean) return "초록 결과를 제공하지 않았습니다.";
   const labelledResults = extractLabelledResultSection(clean);
-  const sentences = splitAbstractSentences(labelledResults ?? clean);
+  // A labelled background/methods section is not a reported finding.
+  // Without results, keep only a labelled conclusion rather than mining the
+  // background for an attractive association.
+  const structuredWithoutResults = /\b(?:background|methods?|objectives?)\s*:/i.test(clean);
+  const resultText = labelledResults ?? (structuredWithoutResults ? extractLabelledConclusionSection(clean) ?? "" : clean);
+  if (!resultText) return "초록에서 완료된 연구 결과를 확인하지 못했습니다.";
+  const sentences = splitAbstractSentences(resultText);
   const selected = [...sentences]
     .map((sentence, index) => ({ sentence, index, score: abstractResultScore(sentence) }))
     .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.sentence
@@ -932,7 +963,11 @@ function anchorHitsInText(text: string, anchors: string[]): number {
     const head = tokens.at(-1) ?? "";
     if (!present(head)) return false;
     const qualifiers = tokens.slice(0, -1);
-    return qualifiers.filter(present).length >= Math.ceil(qualifiers.length / 2);
+    // Explicit alternatives such as red AND processed meat share the head
+    // noun. Otherwise keep every modifier that defines the exposure.
+    return /\b(?:and|or)\b/i.test(anchor)
+      ? qualifiers.some(present)
+      : qualifiers.every(present);
   }).length;
 }
 
@@ -1020,6 +1055,7 @@ function abstractResultScore(sentence: string): number {
   if (/^(?:aim|objective|purpose|background|introduction|methods?)\b/i.test(normalized)) score -= 80;
   if (hasDirectionalSourceResult(sentence)) score += 30;
   if (/\b\d+(?:[.,]\d+)?\s*(?:%|mm\s*hg|mmhg|bpm|mg|g|kg|ml|l|ci|rr|or|hr)\b/i.test(sentence)) score += 40;
+  if (/\bp\s*[=<>≤≥]\s*0?\.\d+/i.test(sentence)) score += 40;
   if (/\b\d+(?:[.,]\d+)?\s*(?:stud(?:y|ies)|articles?|participants?|patients?|trials?|rcts?|references?)\b/i.test(sentence)) score += 10;
   if (/\brisk of bias\b/i.test(normalized)) score -= 60;
   if (/\b(?:included|screened|references?|articles?|studies?|participants?)\b/.test(normalized) &&
@@ -1076,7 +1112,8 @@ function decodeAbstractText(value: string): string {
       const codePoint = Number.parseInt(decimal, 10);
       return validCodePoint(codePoint) ? String.fromCodePoint(codePoint) : " ";
     })
-    .replace(/<[^>]+>/g, " ");
+    // A numeric inequality such as "aged 1 to <3 years" is not HTML.
+    .replace(/<\/?[a-z][^>]*>/gi, " ");
 }
 
 function validCodePoint(value: number): boolean {

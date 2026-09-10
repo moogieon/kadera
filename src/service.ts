@@ -1564,6 +1564,21 @@ export function knownHostQuestionPlan(
   category: Exclude<Category, "auto">
 ): FastHostQueryPlan | undefined {
   const normalized = normalizeQuestion(question);
+  // Keep the timing modifier. A broad sleep alias retrieves treatment trials
+  // (yoga, lavender, light therapy) that do not test the effect of late sleep.
+  if (/(늦게\s*(?:자|잠)|늦은\s*취침|취침\s*(?:시각|시간)|late\s*bedtime)/i.test(normalized) &&
+    !/(교대|야간\s*근무|shift\s*work)/i.test(normalized)) {
+    const topics = ["late bedtime", "delayed sleep timing", "late sleep onset", "sleep timing"];
+    const outcomes = /(혈당|당뇨)/.test(normalized) ? ["glycemic control", "diabetes"]
+      : /(심혈관|심장)/.test(normalized) ? ["cardiovascular disease"]
+      : /(수명|사망)/.test(normalized) ? ["mortality"] : [];
+    return {
+      academicQuery: `late bedtime delayed sleep timing late sleep onset ${outcomes.join(" ")} health systematic review cohort`,
+      topicTerms: topics,
+      outcomeTerms: outcomes,
+      category
+    };
+  }
   if (/(마운자로|mounjaro|tirzepatide)/i.test(normalized) &&
     /(알려|궁금|뭐야|어때|정보)/i.test(normalized)) {
     return {
