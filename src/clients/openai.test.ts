@@ -37,6 +37,8 @@ describe("host MCP paper localization validation", () => {
       papers: [{paper_id: "7017-z", title_ko: "취침 시각과 건강", result_ko: "5~18세에서 늦은 취침과 나쁜 건강의 연관성이 있었지만 근거 확실성은 매우 낮습니다.", headline_ko: "이 연구에서는 어린이·청소년의 취침 시각과 건강에 연관성이 있었습니다."}]
     };
     expect(validateHostMcpLocalization(localized, sources)).toBeDefined();
+    expect(validateHostMcpLocalization({...localized, conclusion_ko: "네, 늦게 자면 건강에 나쁩니다."}, sources)).toBeUndefined();
+    expect(validateHostMcpLocalization({...localized, papers: [{...localized.papers[0], result_ko: "5~18세에서 늦은 취침과 나쁜 건강의 연관성이 있었습니다."}]}, sources)).toBeUndefined();
     expect(validateHostMcpLocalization({...localized, papers: [{...localized.papers[0], result_ko: "25~38세에서 늦은 취침과 나쁜 건강의 연관성이 있었습니다."}]}, sources)).toBeUndefined();
   });
 

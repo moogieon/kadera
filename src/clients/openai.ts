@@ -644,6 +644,10 @@ export function validateHostMcpLocalization(
   if (!Array.isArray(value.papers) || value.papers.length !== sources.length) return undefined;
   const conclusionKo = cleanKoreanField(value.conclusion_ko, 5, 100);
   if (!conclusionKo || /^이 (?:연구|논문)에서는/.test(conclusionKo)) return undefined;
+  // Cached Korean answers must not bypass the source qualifications carried
+  // by the compact packet. If translation drops them, use that packet instead.
+  const hasVeryLowCertainty = sources.some((source) => /\bvery low\b/i.test((source.scopeNotes ?? []).join(" ")));
+  if (hasVeryLowCertainty && !/(낮|불확실|단정|어렵|제한)/.test(conclusionKo)) return undefined;
   const byId = new Map(value.papers.map((paper) => [paper.paper_id, paper]));
   const localized: HostMcpLocalizedPaper[] = [];
   for (const source of sources) {
@@ -653,6 +657,7 @@ export function validateHostMcpLocalization(
     const resultKo = cleanKoreanField(paper.result_ko, 10, 700);
     const headlineKo = cleanKoreanField(paper.headline_ko, 8, 180);
     if (!titleKo || !resultKo || !headlineKo) return undefined;
+    if (/\bvery low\b/i.test((source.scopeNotes ?? []).join(" ")) && !/매우 낮/.test(resultKo)) return undefined;
     if (hasUnsupportedHostNumber(titleKo, source.title)) return undefined;
     const sourceText = `${source.title} ${source.result} ${(source.scopeNotes ?? []).join(" ")}`;
     if (hasUnsupportedHostNumber(resultKo, sourceText)) return undefined;
